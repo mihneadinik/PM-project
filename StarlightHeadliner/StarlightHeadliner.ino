@@ -14,17 +14,18 @@
 #define SATURATION_COLOR 255
 #define VALUE_COLOR 255
 #define VALUE_BLACK 0
-#define MAX_HUE 360
+#define MAX_HUE 65536 // 16 bits max
 #define TWINKLE_DELAY 250
 #define CYCLE_FADE_VALUE (255 / NUM_PIXELS)
 
 // Color constants
 #define HUE_RED 0
-#define HUE_YELLOW 60
-#define HUE_GREEN 120
-#define HUE_CIAN 180
-#define HUE_BLUE 240
-#define HUE_MAGENTA 300
+#define HUE_YELLOW 1 * (MAX_HUE / 6)
+#define HUE_GREEN 2 * (MAX_HUE / 6)
+#define HUE_CIAN 3 * (MAX_HUE / 6)
+#define HUE_BLUE 4 * (MAX_HUE / 6)
+#define HUE_MAGENTA 5 * (MAX_HUE / 6)
+#define HUE_STEP MAX_HUE / 10
 
 // Button decoded values
 #define IR_1 69
@@ -73,8 +74,8 @@ bool twinkleWide, twinkleNarrow;
 ISR(INT0_vect) {
   if (IrReceiver.decode()) {
     command = IrReceiver.decodedIRData.command;
-    IrReceiver.resume();
     modeChange = true;
+    IrReceiver.resume();
   }
 }
 
@@ -124,144 +125,13 @@ void setup() {
 
   IrReceiver.begin(IR_PIN);
   Serial.println("Starting");
-}
 
-uint32_t getPixelColorHsv(uint16_t h, uint8_t s, uint8_t v=255) {
-
-  uint8_t r, g, b;
-
-  if (!s) {
-    // Monochromatic, all components are V
-    r = g = b = v;
-  } else {
-    uint8_t sextant = h >> 8;
-    if (sextant > 5)
-      sextant = 5;  // Limit hue sextants to defined space
-
-    g = v;    // Top level
-
-    // Perform actual calculations
-
-    /*
-       Bottom level:
-       --> (v * (255 - s) + error_corr + 1) / 256
-    */
-    uint16_t ww;        // Intermediate result
-    ww = v * (uint8_t)(~s);
-    ww += 1;            // Error correction
-    ww += ww >> 8;      // Error correction
-    b = ww >> 8;
-
-    uint8_t h_fraction = h & 0xff;  // Position within sextant
-    uint32_t d;      // Intermediate result
-
-    if (!(sextant & 1)) {
-      // r = ...slope_up...
-      // --> r = (v * ((255 << 8) - s * (256 - h)) + error_corr1 + error_corr2) / 65536
-      d = v * (uint32_t)(0xff00 - (uint16_t)(s * (256 - h_fraction)));
-      d += d >> 8;  // Error correction
-      d += v;       // Error correction
-      r = d >> 16;
-    } else {
-      // r = ...slope_down...
-      // --> r = (v * ((255 << 8) - s * h) + error_corr1 + error_corr2) / 65536
-      d = v * (uint32_t)(0xff00 - (uint16_t)(s * h_fraction));
-      d += d >> 8;  // Error correction
-      d += v;       // Error correction
-      r = d >> 16;
-    }
-
-    // Swap RGB values according to sextant. This is done in reverse order with
-    // respect to the original because the swaps are done after the
-    // assignments.
-    if (!(sextant & 6)) {
-      if (!(sextant & 1)) {
-        uint8_t tmp = r;
-        r = g;
-        g = tmp;
-      }
-    } else {
-      if (sextant & 1) {
-        uint8_t tmp = r;
-        r = g;
-        g = tmp;
-      }
-    }
-    if (sextant & 4) {
-      uint8_t tmp = g;
-      g = b;
-      b = tmp;
-    }
-    if (sextant & 2) {
-      uint8_t tmp = r;
-      r = b;
-      b = tmp;
-    }
-  }
-  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
-}
-
-uint32_t HSV_to_RGB_convertor(uint16_t H, uint8_t S = 255, uint8_t V = 255) {
-  uint8_t r = 0, g = 0, b = 0;
-
-  uint16_t max = V;
-  uint16_t C = S * V; // chroma value
-  uint16_t min = max - C;
-  uint16_t H_prime;
-
-  if (H >= 300) {
-    H_prime = (H - 360) / 60;
-  } else {
-    H_prime = H / 60;
-  }
-
-  Serial.println(H);
-  Serial.println(H_prime);
-
-  if (H_prime >= -1 && H_prime < 1) {
-    r = max;
-    if (H_prime < 0) {
-      g = min;
-      b = g - H_prime * C;
-    } else {
-      b = min;
-      g = b + H_prime * C;
-    }
-  }
-
-  if (H_prime >= 1 && H_prime < 3) {
-    g = max;
-    if (H_prime - 2 < 0) {
-      b = min;
-      r = b - (H_prime - 2) * C;
-    } else {
-      r = min;
-      b = r + (H_prime - 2) * C;
-    }
-  }
-
-  if (H_prime >= 3 && H_prime < 5) {
-    b = max;
-    if (H_prime - 4 < 0) {
-      r = min;
-      g = r - (H_prime - 4) * C;
-    } else {
-      g = min;
-      r = g + (H_prime - 4) * C;
-    }
-  }
-
-  // Serial.print(r);
-  // Serial.print(" ");
-  // Serial.print(g);
-  // Serial.print(" ");
-  // Serial.println(b);
-
-  return Adafruit_NeoPixel::Color(r, g, b);
+  pixelsWide.begin();
+  pixelsNarrow.begin();
 }
 
 uint16_t get_random_color() {
-  return rand() % MAX_HUE;
+  return (rand() % 10) * HUE_STEP;
 }
 
 void static_mode() {
@@ -275,8 +145,8 @@ void static_mode() {
 
   // set color (transform HSV spectrum to RGB)
   for (int i = 0; i < NUM_PIXELS; i++) {
-    pixelsWide.setPixelColor(i, HSV_to_RGB_convertor(hueWide, saturationWide));
-    pixelsNarrow.setPixelColor(i, HSV_to_RGB_convertor(hueNarrow, saturationNarrow));
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow));
   }
 
   // apply changes
@@ -314,20 +184,24 @@ void change_brightness(direction dir) {
 void change_color(direction dir) {
   if (selectWide) {
     if (dir == INCREASE) {
-      hueWide = (hueWide + 20) % MAX_HUE;
+      hueWide = (hueWide + HUE_STEP) % MAX_HUE;
     }
     if (dir == DECREASE) {
-      hueWide = (hueWide - 20) % MAX_HUE;
+      hueWide = (hueWide - HUE_STEP) % MAX_HUE;
     }
+
+    saturationWide = SATURATION_COLOR;
   }
 
   if (selectNarrow) {
     if (dir == INCREASE) {
-      hueNarrow = (hueNarrow + 20) % MAX_HUE;
+      hueNarrow = (hueNarrow + HUE_STEP) % MAX_HUE;
     } 
     if (dir == DECREASE) {
-      hueNarrow = (hueNarrow - 20) % MAX_HUE;
+      hueNarrow = (hueNarrow - HUE_STEP) % MAX_HUE;
     }
+
+    saturationNarrow = SATURATION_COLOR;
   }
 
   // change mode to actually apply the changes
@@ -340,18 +214,18 @@ void change_color(direction dir) {
 void execute_mode() {
   switch (prevMode) {
     case STATIC:
-      Serial.println("STATIC");
+      // Serial.println("STATIC");
       static_mode();
       // change mode to blank state after applying changes
       prevMode = NOTHING;
       break;
     
     case TWINKLE:
-      Serial.println("TWINKLE");
+      // Serial.println("TWINKLE");
       break;
 
     case MUSIC:
-      Serial.println("MUSIC");
+      // Serial.println("MUSIC");
       break;
     
     case NOTHING:
@@ -557,4 +431,4 @@ void loop() {
   execute_mode();
 }
 
-// https://cs.stackexchange.com/questions/64549/convert-hsv-to-rgb-colors
+// https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
