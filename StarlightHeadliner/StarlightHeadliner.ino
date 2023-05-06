@@ -10,6 +10,8 @@
 #define NUM_PIXELS 7
 #define MAX_BRIGHTNESS 250
 #define MIN_BRIGHTNESS 0
+#define SMALL_BRIGHTNESS_STEP 10
+#define LARGE_BRIGHTNESS_STEP 25
 #define SATURATION_WHITE 0
 #define SATURATION_COLOR 255
 #define VALUE_COLOR 255
@@ -105,7 +107,6 @@ void set_initial_values() {
   command = IR_7;
   prevMode = TWINKLE;
   modeChange = true;
-  // restoreState = false;
   selectWide = true;
   selectNarrow = true;
   rainbowWide = false;
@@ -156,23 +157,41 @@ void static_mode() {
 
 // only affects the current selection of LEDs
 void change_brightness(direction dir) {
+  Serial.print(brightnessWide);
+  Serial.print(" ");
+  Serial.print(brightnessNarrow);
+  Serial.print(" -> ");
   if (selectWide) {
+    // adjust step dynamically
+    uint8_t step = (brightnessWide > 50) ? LARGE_BRIGHTNESS_STEP :
+                    (brightnessWide == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
+                      (brightnessWide < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
+
     if (dir == INCREASE) {
-      brightnessWide = min(brightnessWide + 25, MAX_BRIGHTNESS);
+      brightnessWide = min(brightnessWide + step, MAX_BRIGHTNESS);
     }
     if (dir == DECREASE) {
-      brightnessWide = max(brightnessWide - 25, MIN_BRIGHTNESS);
+      brightnessWide = max(brightnessWide - step, MIN_BRIGHTNESS);
     }
   }
 
   if (selectNarrow) {
+    // adjust step dynamically
+    uint8_t step = (brightnessNarrow > 50) ? LARGE_BRIGHTNESS_STEP :
+                    (brightnessNarrow == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
+                      (brightnessNarrow < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
+
     if (dir == INCREASE) {
-      brightnessNarrow = min(brightnessNarrow + 25, MAX_BRIGHTNESS);
+      brightnessNarrow = min(brightnessNarrow + step, MAX_BRIGHTNESS);
     } 
     if (dir == DECREASE) {
-      brightnessNarrow = max(brightnessNarrow - 25, MIN_BRIGHTNESS);
+      brightnessNarrow = max(brightnessNarrow - step, MIN_BRIGHTNESS);
     }
   }
+
+  Serial.print(brightnessWide);
+  Serial.print(" ");
+  Serial.println(brightnessNarrow);
 
   // change mode to actually apply the changes
   if (prevMode == NOTHING) {
