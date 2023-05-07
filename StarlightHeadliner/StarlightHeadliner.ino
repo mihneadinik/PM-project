@@ -16,9 +16,9 @@
 #define SATURATION_COLOR 255
 #define VALUE_COLOR 255
 #define VALUE_BLACK 0
-#define MAX_HUE 65536 // 16 bits max
+#define MAX_HUE 65535 // 16 bits max
 #define TWINKLE_DELAY 250
-#define TIMER_TWINKLE_COMPARE ((TWINKLE_DELAY * 1000) / 4)
+#define TIMER_TWINKLE_COMPARE (F_CPU / 256 / 1000 * TWINKLE_DELAY)
 #define CYCLE_FADE_VALUE (255 / NUM_PIXELS)
 
 // Color constants
@@ -29,6 +29,7 @@
 #define HUE_BLUE 4 * (MAX_HUE / 6)
 #define HUE_MAGENTA 5 * (MAX_HUE / 6)
 #define HUE_STEP MAX_HUE / 10
+#define HUE_TWINKLE_STEP MAX_HUE / 1000
 
 // Button decoded values
 #define IR_1 69
@@ -68,6 +69,7 @@ uint16_t hueNarrow;
 // Program values
 uint16_t command;
 state prevMode, currMode;
+uint8_t twinkleOffset;
 bool modeChange;
 bool twinkleChange;
 bool selectWide, selectNarrow;
@@ -91,7 +93,6 @@ ISR(TIMER1_COMPA_vect) {
 // activates external interrupts for PD2
 void setup_interrupts() {
   cli();
-
   // rising edge on PD2
   EICRA |= (1 << ISC01);
   EICRA |= (1 << ISC00);
@@ -111,8 +112,8 @@ void setup_timer1() {
   // set the timer to stop on compare match
   TCCR1A = 0;
   TCCR1B |= (1 << WGM12);
-  // set prescaler to 64
-  TCCR1B |= (1 << CS11) | (1 << CS10);
+  // set prescaler to 256
+  TCCR1B |= (1 << CS12);
   // set compare value
   OCR1A = TIMER_TWINKLE_COMPARE;
   // activate interrupt on compare match
@@ -131,7 +132,7 @@ void stop_timer1() {
 // restarts the timer after it has been set up and stopped
 void start_timer1() {
   cli();
-  TCCR1B |= (1 << WGM12) | (1 << CS11) | (1 << CS10);
+  TCCR1B |= (1 << WGM12) | (1 << CS12);
   Serial.println("Timer start");
   sei();
 }
@@ -149,6 +150,7 @@ void set_initial_values() {
   command = IR_7;
   currMode = TWINKLE;
   prevMode = TWINKLE;
+  twinkleOffset = 0;
   modeChange = true;
   twinkleChange = false;
   selectWide = true;
@@ -180,26 +182,6 @@ void setup() {
 
 uint16_t get_random_color() {
   return (rand() % 10) * HUE_STEP;
-}
-
-void static_mode() {
-  // clear previously selected values
-  pixelsWide.clear();
-  pixelsNarrow.clear();
-
-  // set brightness
-  pixelsWide.setBrightness(brightnessWide);
-  pixelsNarrow.setBrightness(brightnessNarrow);
-
-  // set color (transform HSV spectrum to RGB)
-  for (int i = 0; i < NUM_PIXELS; i++) {
-    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide));
-    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow));
-  }
-
-  // apply changes
-  pixelsWide.show();
-  pixelsNarrow.show();
 }
 
 // only affects the current selection of LEDs
@@ -268,6 +250,66 @@ void change_color(direction dir) {
   }
 }
 
+// Both LEDs will be static colored
+void static_mode() {
+  // Clear previously selected values
+  pixelsWide.clear();
+  pixelsNarrow.clear();
+
+  // Set brightness
+  pixelsWide.setBrightness(brightnessWide);
+  pixelsNarrow.setBrightness(brightnessNarrow);
+
+  // Set color (transform HSV spectrum to RGB)
+  for (int i = 0; i < NUM_PIXELS; i++) {
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow));
+  }
+
+  // Apply changes
+  pixelsWide.show();
+  pixelsNarrow.show();
+}
+
+void twinkle_mode() {
+  // Interrupt signaled it's time to update the twinkle effect
+  if (twinkleChange) {
+    // Serial.println("Tick");
+    twinkleChange = false;
+    // increase blacked out LED position on ring
+    twinkleOffset = (twinkleOffset + 1) % NUM_PIXELS;
+  }
+
+  // Update LEDs values
+  pixelsWide.setBrightness(brightnessWide);
+  pixelsNarrow.setBrightness(brightnessNarrow);
+
+  for (int i = 0; i < NUM_PIXELS; i++) {
+    // Narrow strip is always cycling
+    pixelsNarrow.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
+    if (twinkleWide) {
+      pixelsWide.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
+    } else {
+      pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide));
+    }
+  }
+
+  // Apply changes
+  pixelsWide.show();
+  pixelsNarrow.show();
+
+  // Increase hue values for rainbow effect
+  if (rainbowWide) {
+    hueWide += HUE_TWINKLE_STEP;
+    hueWide %= MAX_HUE;
+  }
+
+  if (rainbowNarrow) {
+    hueNarrow += HUE_TWINKLE_STEP;
+    hueNarrow %= MAX_HUE;
+  }
+}
+
 // Applies changes to the LEDs
 void execute_mode() {
   switch (currMode) {
@@ -280,6 +322,7 @@ void execute_mode() {
     
     case TWINKLE:
       // Serial.println("TWINKLE");
+      twinkle_mode();
       break;
 
     case MUSIC:
@@ -503,11 +546,6 @@ void loop() {
     // handle new command from interrupt
     modeChange = false;
     decode_command();
-  }
-
-  if (twinkleChange) {
-    twinkleChange = false;
-    Serial.println("Tick");
   }
 
   execute_mode();
