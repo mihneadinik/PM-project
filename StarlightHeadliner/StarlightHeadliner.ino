@@ -84,11 +84,18 @@ ISR(INT0_vect) {
     modeChange = true;
     IrReceiver.resume();
   }
+
+  
 }
 
 // Interrupt routine every 250ms
 ISR(TIMER1_COMPA_vect) {
   twinkleChange = true;
+}
+
+// Interrupt to re-enable interrupts on IR
+ISR(TIMER0_COMPA_vect) {
+  EIMSK |= (1 << INT0);
 }
 
 // activates external interrupts for PD2
@@ -119,6 +126,24 @@ void setup_timer1() {
   OCR1A = TIMER_TWINKLE_COMPARE;
   // activate interrupt on compare match
   TIMSK1 |= (1 << OCIE1A);
+  sei();
+}
+
+// sets timer0 to generate an interrupt at overflow
+void setup_timer0() {
+  cli();
+  // clear the registers
+  TCNT0 = 0;
+  TCCR0A = 0;
+  // set the timer to stop on overflow
+  TCCR0B = 0;
+  TCCR0B |= (1 << WGM01);
+  // set prescaler to 256
+  TCCR0A |= (1 << CS02) | (1 << CS00);
+  // set compare value
+  OCR0A = 255;
+  // activate interrupt
+  TIMSK0 |= (1 << OCIE0A);
   sei();
 }
 
@@ -169,8 +194,9 @@ void setup() {
 
   Serial.begin(9600);
   // initial setups
-  setup_interrupts();
+  setup_timer0();
   setup_timer1();
+  setup_interrupts();
   set_initial_values();
 
   IrReceiver.begin(IR_PIN);
@@ -547,6 +573,7 @@ void decode_command() {
 void loop() {
   if (modeChange) {
     // handle new command from interrupt
+    EIMSK &= ~(1 << INT0);
     modeChange = false;
     decode_command();
   }
