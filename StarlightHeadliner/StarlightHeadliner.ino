@@ -29,7 +29,7 @@
 #define HUE_BLUE 4 * (MAX_HUE / 6)
 #define HUE_MAGENTA 5 * (MAX_HUE / 6)
 #define HUE_STEP MAX_HUE / 10
-#define HUE_TWINKLE_STEP MAX_HUE / 1000
+#define HUE_TWINKLE_STEP MAX_HUE / 500
 
 // Button decoded values
 #define IR_1 69
@@ -80,6 +80,7 @@ bool twinkleWide, twinkleNarrow;
 ISR(INT0_vect) {
   if (IrReceiver.decode()) {
     command = IrReceiver.decodedIRData.command;
+    //Serial.println(command);
     modeChange = true;
     IrReceiver.resume();
   }
@@ -271,15 +272,7 @@ void static_mode() {
   pixelsNarrow.show();
 }
 
-void twinkle_mode() {
-  // Interrupt signaled it's time to update the twinkle effect
-  if (twinkleChange) {
-    // Serial.println("Tick");
-    twinkleChange = false;
-    // increase blacked out LED position on ring
-    twinkleOffset = (twinkleOffset + 1) % NUM_PIXELS;
-  }
-
+void _execute_twinkle() {
   // Update LEDs values
   pixelsWide.setBrightness(brightnessWide);
   pixelsNarrow.setBrightness(brightnessNarrow);
@@ -307,6 +300,16 @@ void twinkle_mode() {
   if (rainbowNarrow) {
     hueNarrow += HUE_TWINKLE_STEP;
     hueNarrow %= MAX_HUE;
+  }
+}
+
+void twinkle_mode() {
+  // Interrupt signaled it's time to update the twinkle effect
+  if (twinkleChange) {
+    twinkleChange = false;
+    // increase blacked out LED position on ring
+    twinkleOffset = (twinkleOffset + 1) % NUM_PIXELS;
+    _execute_twinkle();
   }
 }
 
