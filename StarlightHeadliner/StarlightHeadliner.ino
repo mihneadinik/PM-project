@@ -18,6 +18,7 @@
 #define VALUE_BLACK 0
 #define MAX_HUE 65536 // 16 bits max
 #define TWINKLE_DELAY 250
+#define TIMER_TWINKLE_COMPARE ((TWINKLE_DELAY * 1000) / 4)
 #define CYCLE_FADE_VALUE (255 / NUM_PIXELS)
 
 // Color constants
@@ -66,8 +67,9 @@ uint16_t hueNarrow;
 
 // Program values
 uint16_t command;
-state prevMode;
+state prevMode, currMode;
 bool modeChange;
+bool twinkleChange;
 bool selectWide, selectNarrow;
 bool rainbowWide, rainbowNarrow;
 bool twinkleWide, twinkleNarrow;
@@ -79,6 +81,11 @@ ISR(INT0_vect) {
     modeChange = true;
     IrReceiver.resume();
   }
+}
+
+// Interrupt routine every 250ms
+ISR(TIMER1_COMPA_vect) {
+  twinkleChange = true;
 }
 
 // activates external interrupts for PD2
@@ -94,6 +101,41 @@ void setup_interrupts() {
   sei();
 }
 
+// sets timer1 to generate an interrupt each 250ms
+void setup_timer1() {
+  cli();
+  // clear the registers
+  TCNT1 = 0;
+  TCCR1A = 0;
+  TCCR1B = 0;
+  // set the timer to stop on compare match
+  TCCR1A = 0;
+  TCCR1B |= (1 << WGM12);
+  // set prescaler to 64
+  TCCR1B |= (1 << CS11) | (1 << CS10);
+  // set compare value
+  OCR1A = TIMER_TWINKLE_COMPARE;
+  // activate interrupt on compare match
+  TIMSK1 |= (1 << OCIE1A);
+  sei();
+}
+
+// stops timer1 when we do not need it
+void stop_timer1() {
+  cli();
+  TCCR1B = 0;
+  Serial.println("Timer end");
+  sei();
+}
+
+// restarts the timer after it has been set up and stopped
+void start_timer1() {
+  cli();
+  TCCR1B |= (1 << WGM12) | (1 << CS11) | (1 << CS10);
+  Serial.println("Timer start");
+  sei();
+}
+
 void set_initial_values() {
   // Neopixel params
   hueWide = HUE_RED;
@@ -105,8 +147,10 @@ void set_initial_values() {
 
   // Program params (starts on white-red twinkle)
   command = IR_7;
+  currMode = TWINKLE;
   prevMode = TWINKLE;
   modeChange = true;
+  twinkleChange = false;
   selectWide = true;
   selectNarrow = true;
   rainbowWide = false;
@@ -121,12 +165,15 @@ void setup() {
   digitalWrite(13, HIGH);
 
   Serial.begin(9600);
+  // initial setups
   setup_interrupts();
+  setup_timer1();
   set_initial_values();
 
   IrReceiver.begin(IR_PIN);
   Serial.println("Starting");
 
+  // Neopixels startup
   pixelsWide.begin();
   pixelsNarrow.begin();
 }
@@ -157,10 +204,6 @@ void static_mode() {
 
 // only affects the current selection of LEDs
 void change_brightness(direction dir) {
-  Serial.print(brightnessWide);
-  Serial.print(" ");
-  Serial.print(brightnessNarrow);
-  Serial.print(" -> ");
   if (selectWide) {
     // adjust step dynamically
     uint8_t step = (brightnessWide > 50) ? LARGE_BRIGHTNESS_STEP :
@@ -189,13 +232,9 @@ void change_brightness(direction dir) {
     }
   }
 
-  Serial.print(brightnessWide);
-  Serial.print(" ");
-  Serial.println(brightnessNarrow);
-
   // change mode to actually apply the changes
-  if (prevMode == NOTHING) {
-    prevMode = STATIC;
+  if (currMode == NOTHING) {
+    currMode = STATIC;
   }
 }
 
@@ -224,19 +263,19 @@ void change_color(direction dir) {
   }
 
   // change mode to actually apply the changes
-  if (prevMode == NOTHING) {
-    prevMode = STATIC;
+  if (currMode == NOTHING) {
+    currMode = STATIC;
   }
 }
 
 // Applies changes to the LEDs
 void execute_mode() {
-  switch (prevMode) {
+  switch (currMode) {
     case STATIC:
       // Serial.println("STATIC");
       static_mode();
       // change mode to blank state after applying changes
-      prevMode = NOTHING;
+      currMode = NOTHING;
       break;
     
     case TWINKLE:
@@ -252,8 +291,24 @@ void execute_mode() {
   }
 }
 
+// Enables or disables the timer1 depending on the lighting mode
+void update_timer_status() {
+  // Enable timer
+  if (currMode == TWINKLE && prevMode != TWINKLE) {
+    start_timer1();
+  }
+
+  // Disable timer
+  if (prevMode == TWINKLE && currMode != TWINKLE) {
+    stop_timer1();
+  }
+}
+
 // Decodes the code received from remote
 void decode_command() {
+  // save last state
+  prevMode = currMode;
+
   switch (command) {
     // Both static white color mode
     case IR_1:
@@ -266,7 +321,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = STATIC;
+      currMode = STATIC;
       break;
     
     // Both static red color mode
@@ -282,7 +337,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = STATIC;
+      currMode = STATIC;
       break;
 
     // Both static random color mode
@@ -297,7 +352,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = STATIC;
+      currMode = STATIC;
       break;
     
     // Both twinkle white color mode
@@ -311,7 +366,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = TWINKLE;
+      currMode = TWINKLE;
       break;
     
     // Both twinkle red color mode
@@ -327,7 +382,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = TWINKLE;
+      currMode = TWINKLE;
       break;
 
     // Both twinkle rainbow mode
@@ -341,7 +396,7 @@ void decode_command() {
       rainbowWide = true;
       rainbowNarrow = true;
 
-      prevMode = TWINKLE;
+      currMode = TWINKLE;
       break;
 
     // Single (narrow) white twinkle with static red color mode
@@ -356,7 +411,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = TWINKLE;
+      currMode = TWINKLE;
       break;
     
     // Single (narrow) white twinkle with static random color mode
@@ -371,7 +426,7 @@ void decode_command() {
       rainbowWide = false;
       rainbowNarrow = false;
 
-      prevMode = TWINKLE;
+      currMode = TWINKLE;
       break;
 
     // Single (narrow) white twinkle with rainbow color mode
@@ -385,7 +440,7 @@ void decode_command() {
       rainbowWide = true;
       rainbowNarrow = false;
 
-      prevMode = TWINKLE;
+      currMode = TWINKLE;
       break;
 
     // Select wide only
@@ -424,6 +479,7 @@ void decode_command() {
     // Music reactive mode
     case IR_OK:
       Serial.println("IR_OK");
+      currMode = MUSIC;
       break;
 
     // Change color clockwise on selection
@@ -438,6 +494,8 @@ void decode_command() {
       change_brightness(DECREASE);
       break;
   }
+
+  update_timer_status();
 }
 
 void loop() {
@@ -445,6 +503,11 @@ void loop() {
     // handle new command from interrupt
     modeChange = false;
     decode_command();
+  }
+
+  if (twinkleChange) {
+    twinkleChange = false;
+    Serial.println("Tick");
   }
 
   execute_mode();
