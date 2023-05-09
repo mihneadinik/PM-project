@@ -538,3 +538,4 @@ void loop() {
 }
 
 // https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
+// https://github.com/Arduino-IRremote/Arduino-IRremote#timer-and-pin-usage
