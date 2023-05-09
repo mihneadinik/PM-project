@@ -1,4 +1,4 @@
-#include <IRremote.h>
+#include "adaptedTinyIRReceiver.hpp"
 #include <Adafruit_NeoPixel.h>
 
 // Arduino pins
@@ -67,7 +67,7 @@ uint8_t saturationNarrow, brightnessNarrow;
 uint16_t hueNarrow;
 
 // Program values
-uint16_t command;
+uint8_t command;
 state prevMode, currMode;
 uint8_t twinkleOffset;
 bool modeChange;
@@ -76,31 +76,15 @@ bool selectWide, selectNarrow;
 bool rainbowWide, rainbowNarrow;
 bool twinkleWide, twinkleNarrow;
 
-// Interrupt routine for PD2
-ISR(INT0_vect) {
-  if (IrReceiver.decode()) {
-    command = IrReceiver.decodedIRData.command;
-    //Serial.println(command);
-    modeChange = true;
-    IrReceiver.resume();
-  }
-}
-
 // Interrupt routine every 250ms
 ISR(TIMER1_COMPA_vect) {
   twinkleChange = true;
 }
 
-// activates external interrupts for PD2
-void setup_interrupts() {
-  cli();
-  // rising edge on PD2
-  EICRA |= (1 << ISC01);
-  EICRA |= (1 << ISC00);
-
-  // activate interrupts on PD2
-  EIMSK |= (1 << INT0);
-  sei();
+// callback after ISR routine on IR_PIN is over
+void handleReceivedTinyIRData(uint8_t aAddress, uint8_t aCommand, uint8_t aFlags) {
+  command = aCommand;
+  modeChange = true;
 }
 
 // sets timer1 to generate an interrupt each 250ms
@@ -169,11 +153,10 @@ void setup() {
 
   Serial.begin(9600);
   // initial setups
-  setup_interrupts();
+  setup_receiver_and_interrupts();
   setup_timer1();
   set_initial_values();
 
-  IrReceiver.begin(IR_PIN);
   Serial.println("Starting");
 
   // Neopixels startup
