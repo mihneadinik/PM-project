@@ -61,9 +61,9 @@ Adafruit_NeoPixel pixelsWide(NUM_PIXELS, WIDE_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixelsNarrow(NUM_PIXELS, NARROW_PIN, NEO_GRB + NEO_KHZ800);
 
 // Neopixels values
-uint8_t saturationWide, brightnessWide;
+uint8_t saturationWide, brightnessWide, brightnessWide_copy;
 uint16_t hueWide;
-uint8_t saturationNarrow, brightnessNarrow;
+uint8_t saturationNarrow, brightnessNarrow, brightnessNarrow_copy;
 uint16_t hueNarrow;
 
 // Program values
@@ -76,9 +76,27 @@ bool selectWide, selectNarrow;
 bool rainbowWide, rainbowNarrow;
 bool twinkleWide, twinkleNarrow;
 
+// Music reactive
+uint8_t externNoise;
+bool musicEnabled;
+
 // Interrupt routine every 250ms
 ISR(TIMER1_COMPA_vect) {
   twinkleChange = true;
+}
+
+// Interrupt routine ADC
+ISR(ADC_vect) {
+  // read conversion and set brightness accordingly
+  externNoise = ADCH;
+
+  Serial.println(externNoise);
+  
+  brightnessNarrow = externNoise;
+  brightnessWide = (externNoise + 25) % MAX_BRIGHTNESS;
+
+  // start next conversion
+  ADCSRA |= (1 << ADSC);
 }
 
 // callback after ISR routine on IR_PIN is over
@@ -87,9 +105,47 @@ void handleReceivedTinyIRData(uint8_t aAddress, uint8_t aCommand, uint8_t aFlags
   modeChange = true;
 }
 
+// sets the ADC to Free Running mode
+void setup_ADC() {
+  cli();
+
+  ADCSRB = 0;
+  ADCSRA = 0;
+  ADCSRA |= (1 << ADIE);  // enable ADC interrupts
+
+  ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);  // Setează prescaler la 128 pentru a obține o frecvență de eșantionare corespunzătoare
+
+  ADMUX |= (1 << REFS0) | (1 << REFS1);  // Setează referința de tensiune la 1.1V
+  ADMUX |= (1 << ADLAR);  // Setează rezultatul ADC să fie aliniat la stânga (8 biți)
+
+  sei();
+}
+
+void enable_ADC() {
+  cli();
+
+  // enable ADC
+  ADCSRA |= (1 << ADEN);
+
+  sei();
+
+  // start ADC conversion
+  ADCSRA |= (1 << ADSC);
+}
+
+void disable_ADC() {
+  cli();
+
+  // disable ADC
+  ADCSRA &= ~(1 << ADEN);
+
+  sei();
+}
+
 // sets timer1 to generate an interrupt each 250ms
 void setup_timer1() {
   cli();
+
   // clear the registers
   TCNT1 = 0;
   TCCR1A = 0;
@@ -103,22 +159,27 @@ void setup_timer1() {
   OCR1A = TIMER_TWINKLE_COMPARE;
   // activate interrupt on compare match
   TIMSK1 |= (1 << OCIE1A);
+
   sei();
 }
 
 // stops timer1 when we do not need it
 void stop_timer1() {
   cli();
+
   TCCR1B = 0;
   Serial.println("Timer end");
+  
   sei();
 }
 
 // restarts the timer after it has been set up and stopped
 void start_timer1() {
   cli();
+
   TCCR1B |= (1 << WGM12) | (1 << CS12);
   Serial.println("Timer start");
+
   sei();
 }
 
@@ -144,17 +205,15 @@ void set_initial_values() {
   rainbowNarrow = false;
   twinkleWide = false;
   twinkleNarrow = false;
+  musicEnabled = false;
 }
 
 void setup() {
-  // TODO change, only for getting 5V
-  pinMode(13, OUTPUT);
-  digitalWrite(13, HIGH);
-
   Serial.begin(9600);
   // initial setups
   setup_receiver_and_interrupts();
   setup_timer1();
+  setup_ADC();
   set_initial_values();
 
   Serial.println("Starting");
@@ -303,7 +362,7 @@ void execute_mode() {
       // Serial.println("STATIC");
       static_mode();
       // change mode to blank state after applying changes
-      currMode = NOTHING;
+      currMode = musicEnabled ? STATIC : NOTHING;
       break;
     
     case TWINKLE:
@@ -313,6 +372,8 @@ void execute_mode() {
 
     case MUSIC:
       // Serial.println("MUSIC");
+      // get back to previous light mode
+      currMode = prevMode;
       break;
     
     case NOTHING:
@@ -330,6 +391,27 @@ void update_timer_status() {
   // Disable timer
   if (prevMode == TWINKLE && currMode != TWINKLE) {
     stop_timer1();
+  }
+}
+
+// Enables or disables the ADC depending on the lighting mode
+void update_ADC_status() {
+  // Enable ADC
+  if (currMode == MUSIC && prevMode != MUSIC) {
+    Serial.println("Enabled ADC");
+    brightnessWide_copy = brightnessWide;
+    brightnessNarrow_copy = brightnessNarrow;
+    musicEnabled = true;
+    enable_ADC();
+  }
+
+  // Disable ADC
+  if (musicEnabled && currMode != MUSIC) {
+    Serial.println("Disabled ADC");
+    brightnessWide = brightnessWide_copy;
+    brightnessNarrow = brightnessNarrow_copy;
+    musicEnabled = false;
+    disable_ADC();
   }
 }
 
@@ -525,6 +607,7 @@ void decode_command() {
   }
 
   update_timer_status();
+  update_ADC_status();
 }
 
 void loop() {
