@@ -18,7 +18,9 @@
 #define VALUE_BLACK 0
 #define MAX_HUE 65535 // 16 bits max
 #define TWINKLE_DELAY 250
+#define MUSIC_CAPTURE_DELAY 100
 #define TIMER_TWINKLE_COMPARE (F_CPU / 256 / 1000 * TWINKLE_DELAY)
+#define TIMER_MUSIC_COMPARE (F_CPU / 256 / 1000 * MUSIC_CAPTURE_DELAY)
 #define CYCLE_FADE_VALUE (255 / NUM_PIXELS)
 
 // Color constants
@@ -78,9 +80,9 @@ bool twinkleWide, twinkleNarrow;
 
 // Music reactive
 uint8_t externNoise;
-bool musicEnabled;
+bool musicEnabled, brightnessChanged;
 
-// Interrupt routine every 250ms
+// Interrupt routine for twinkle effect
 ISR(TIMER1_COMPA_vect) {
   twinkleChange = true;
 }
@@ -95,8 +97,8 @@ ISR(ADC_vect) {
   brightnessNarrow = externNoise;
   brightnessWide = (externNoise + 25) % MAX_BRIGHTNESS;
 
-  // start next conversion
-  ADCSRA |= (1 << ADSC);
+  // set flag to update brightness
+  brightnessChanged = true;
 }
 
 // callback after ISR routine on IR_PIN is over
@@ -206,6 +208,7 @@ void set_initial_values() {
   twinkleWide = false;
   twinkleNarrow = false;
   musicEnabled = false;
+  brightnessChanged = false;
 }
 
 void setup() {
@@ -362,7 +365,7 @@ void execute_mode() {
       // Serial.println("STATIC");
       static_mode();
       // change mode to blank state after applying changes
-      currMode = musicEnabled ? STATIC : NOTHING;
+      currMode = NOTHING;
       break;
     
     case TWINKLE:
@@ -372,8 +375,12 @@ void execute_mode() {
 
     case MUSIC:
       // Serial.println("MUSIC");
-      // get back to previous light mode
-      currMode = prevMode;
+      if (brightnessChanged) {
+        static_mode();
+        // start next conversion
+        brightnessChanged = false;
+        ADCSRA |= (1 << ADSC);
+      }
       break;
     
     case NOTHING:
