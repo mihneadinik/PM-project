@@ -87,15 +87,33 @@ ISR(TIMER1_COMPA_vect) {
   twinkleChange = true;
 }
 
+// Interrupt routine for music input capture
+ISR(TIMER1_COMPB_vect) {
+  // start ADC conversion
+  ADCSRA |= (1 << ADSC);
+}
+
 // Interrupt routine ADC
 ISR(ADC_vect) {
   // read conversion and set brightness accordingly
-  externNoise = ADCH;
+  externNoise = (ADCH > 10) ? ADCH : 10;
 
-  Serial.println(externNoise);
+  uint8_t brightnessNarrow_new = externNoise;
+  // add a random brightness increase
+  uint8_t brightnessWide_new = (externNoise + ((externNoise > 10) ? 10 + rand() % 30 : 0)) % MAX_BRIGHTNESS;
   
-  brightnessNarrow = externNoise;
-  brightnessWide = (externNoise + 25) % MAX_BRIGHTNESS;
+  // only change with 3 quarters of the difference for smoothness
+  if (brightnessNarrow_new > brightnessNarrow) {
+    brightnessNarrow = (uint8_t)(brightnessNarrow + (brightnessNarrow_new - brightnessNarrow) * 0.75) % MAX_BRIGHTNESS;
+  } else {
+    brightnessNarrow = (uint8_t)(brightnessNarrow - (brightnessNarrow - brightnessNarrow_new) * 0.75) % MAX_BRIGHTNESS;
+  }
+
+  if (brightnessWide_new > brightnessWide) {
+    brightnessWide = (uint8_t)(brightnessWide + (brightnessWide_new - brightnessWide) * 0.75) % MAX_BRIGHTNESS;
+  } else {
+    brightnessWide = (uint8_t)(brightnessWide - (brightnessWide - brightnessWide_new) * 0.75) % MAX_BRIGHTNESS;
+  }
 
   // set flag to update brightness
   brightnessChanged = true;
@@ -124,27 +142,16 @@ void setup_ADC() {
 }
 
 void enable_ADC() {
-  cli();
-
   // enable ADC
   ADCSRA |= (1 << ADEN);
-
-  sei();
-
-  // start ADC conversion
-  ADCSRA |= (1 << ADSC);
 }
 
 void disable_ADC() {
-  cli();
-
   // disable ADC
   ADCSRA &= ~(1 << ADEN);
-
-  sei();
 }
 
-// sets timer1 to generate an interrupt each 250ms
+// sets timer1 to compare match on both channels
 void setup_timer1() {
   cli();
 
@@ -159,28 +166,51 @@ void setup_timer1() {
   TCCR1B |= (1 << CS12);
   // set compare value
   OCR1A = TIMER_TWINKLE_COMPARE;
+  OCR1B = TIMER_MUSIC_COMPARE;
   // activate interrupt on compare match
   TIMSK1 |= (1 << OCIE1A);
 
   sei();
 }
 
-// stops timer1 when we do not need it
-void stop_timer1() {
+// stops counting for twkinkle changes
+void stop_twinkle_timer() {
   cli();
 
-  TCCR1B = 0;
-  Serial.println("Timer end");
+  TIMSK1 &= ~(1 << OCIE1A);
+  Serial.println("Twinkle end");
   
   sei();
 }
 
-// restarts the timer after it has been set up and stopped
-void start_timer1() {
+// stops counting for music changes
+void stop_music_timer() {
   cli();
 
-  TCCR1B |= (1 << WGM12) | (1 << CS12);
-  Serial.println("Timer start");
+  TIMSK1 &= ~(1 << OCIE1B);
+  disable_ADC();
+  Serial.println("Music end");
+  
+  sei();
+}
+
+// restarts the twinkle counting
+void start_twinkle_timer() {
+  cli();
+
+  TIMSK1 |= (1 << OCIE1A);
+  Serial.println("Twinkle start");
+
+  sei();
+}
+
+// restarts the music capture counting
+void start_music_timer() {
+  cli();
+
+  TIMSK1 |= (1 << OCIE1B);
+  enable_ADC();
+  Serial.println("Music start");
 
   sei();
 }
@@ -376,10 +406,9 @@ void execute_mode() {
     case MUSIC:
       // Serial.println("MUSIC");
       if (brightnessChanged) {
-        static_mode();
-        // start next conversion
+        // update brightness
         brightnessChanged = false;
-        ADCSRA |= (1 << ADSC);
+        static_mode();
       }
       break;
     
@@ -392,12 +421,12 @@ void execute_mode() {
 void update_timer_status() {
   // Enable timer
   if (currMode == TWINKLE && prevMode != TWINKLE) {
-    start_timer1();
+    start_twinkle_timer();
   }
 
   // Disable timer
   if (prevMode == TWINKLE && currMode != TWINKLE) {
-    stop_timer1();
+    stop_twinkle_timer();
   }
 }
 
@@ -409,7 +438,7 @@ void update_ADC_status() {
     brightnessWide_copy = brightnessWide;
     brightnessNarrow_copy = brightnessNarrow;
     musicEnabled = true;
-    enable_ADC();
+    start_music_timer();
   }
 
   // Disable ADC
@@ -418,7 +447,7 @@ void update_ADC_status() {
     brightnessWide = brightnessWide_copy;
     brightnessNarrow = brightnessNarrow_copy;
     musicEnabled = false;
-    disable_ADC();
+    stop_music_timer();
   }
 }
 
