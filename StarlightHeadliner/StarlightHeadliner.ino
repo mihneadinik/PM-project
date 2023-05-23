@@ -75,6 +75,13 @@ typedef struct {
   bool twinkleChange; // Flag set in timer interrupt so the twinkle mode will advance
 } twinkleParams_t;
 
+// Structure used to keep runtime parameters of lightning mode
+typedef struct {
+  state prevMode; // Previous light mode
+  state currMode; // Current light mode
+  bool modeChange; // Flag set in interrupt routine so a new command will be decoded in loop
+} lightMode_t;
+
 // Neopixels
 Adafruit_NeoPixel pixelsWide(NUM_PIXELS, WIDE_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixelsNarrow(NUM_PIXELS, NARROW_PIN, NEO_GRB + NEO_KHZ800);
@@ -85,9 +92,8 @@ stripParams_t narrowStripParams;
 
 // Program values
 twinkleParams_t twinkleParams;
+lightMode_t lightMode;
 uint8_t command; // Received from the remote
-state prevMode, currMode; // Light modes
-bool modeChange; // Flag set in interrupt routine so a new command will be decoded in loop
 bool brightnessChanged; // Flag set after ADC conversion to update LEDs brightness
 
 // Interrupt routine for twinkle effect
@@ -133,7 +139,7 @@ void handleReceivedTinyIRData(uint8_t aAddress, uint8_t aCommand, uint8_t aFlags
   // Save received command
   command = aCommand;
   // Set flag to decode it
-  modeChange = true;
+  lightMode.modeChange = true;
 }
 
 // Sets the ADC to Free Running mode
@@ -255,11 +261,11 @@ void set_initial_values() {
 
   // Program params (starts on white-red twinkle)
   command = IR_7;
-  currMode = TWINKLE;
-  prevMode = TWINKLE;
+  lightMode.currMode = TWINKLE;
+  lightMode.prevMode = TWINKLE;
   twinkleParams.twinkleLEDOffset = 0;
   twinkleParams.twinkleChange = false;
-  modeChange = true;
+  lightMode.modeChange = true; // Force set flag to execute default command
   brightnessChanged = false;
 }
 
@@ -313,8 +319,8 @@ void change_brightness(direction dir) {
   }
 
   // Change mode to actually apply the changes
-  if (currMode == NOTHING) {
-    currMode = STATIC;
+  if (lightMode.currMode == NOTHING) {
+    lightMode.currMode = STATIC;
   }
 }
 
@@ -345,8 +351,8 @@ void change_color(direction dir) {
   }
 
   // Change mode to actually apply the changes
-  if (currMode == NOTHING) {
-    currMode = STATIC;
+  if (lightMode.currMode == NOTHING) {
+    lightMode.currMode = STATIC;
   }
 }
 
@@ -416,11 +422,11 @@ void twinkle_mode() {
 
 // Applies changes to the LEDs
 void execute_mode() {
-  switch (currMode) {
+  switch (lightMode.currMode) {
     case STATIC:
       static_mode();
       // Change mode to blank state after applying changes
-      currMode = NOTHING;
+      lightMode.currMode = NOTHING;
       break;
     
     case TWINKLE:
@@ -445,12 +451,12 @@ void execute_mode() {
 // Enables or disables the timer1 depending on the lighting mode
 void update_timer_status() {
   // Enable timer when twinkle mode is selected
-  if (currMode == TWINKLE && prevMode != TWINKLE) {
+  if (lightMode.currMode == TWINKLE && lightMode.prevMode != TWINKLE) {
     start_twinkle_timer();
   }
 
   // Disable timer when twinkle mode is changed
-  if (prevMode == TWINKLE && currMode != TWINKLE) {
+  if (lightMode.prevMode == TWINKLE && lightMode.currMode != TWINKLE) {
     stop_twinkle_timer();
   }
 }
@@ -458,7 +464,7 @@ void update_timer_status() {
 // Enables or disables the ADC depending on the lighting mode
 void update_ADC_status() {
   // Enable ADC when music mode is selected
-  if (currMode == MUSIC && prevMode != MUSIC) {
+  if (lightMode.currMode == MUSIC && lightMode.prevMode != MUSIC) {
     // Save previous brightness values
     wideStripParams.brightness_save = wideStripParams.brightness;
     narrowStripParams.brightness_save = narrowStripParams.brightness;
@@ -468,7 +474,7 @@ void update_ADC_status() {
   }
 
   // Disable ADC when music mode is changed
-  if (currMode != MUSIC && prevMode == MUSIC) {
+  if (lightMode.currMode != MUSIC && lightMode.prevMode == MUSIC) {
     // Restore previous brightness values
     wideStripParams.brightness = wideStripParams.brightness_save;
     narrowStripParams.brightness = narrowStripParams.brightness_save;
@@ -481,7 +487,7 @@ void update_ADC_status() {
 // Decodes the code received from remote
 void decode_command() {
   // Save last state
-  prevMode = currMode;
+  lightMode.prevMode = lightMode.currMode;
 
   switch (command) {
     // Both static white color mode
@@ -497,7 +503,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // Update current light mode
-      currMode = STATIC;
+      lightMode.currMode = STATIC;
       break;
     
     // Both static red color mode
@@ -516,7 +522,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // Update current light mode
-      currMode = STATIC;
+      lightMode.currMode = STATIC;
       break;
 
     // Both static random color mode
@@ -534,7 +540,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // Update current light mode
-      currMode = STATIC;
+      lightMode.currMode = STATIC;
       break;
     
     // Both twinkle white color mode
@@ -550,7 +556,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // update current light mode
-      currMode = TWINKLE;
+      lightMode.currMode = TWINKLE;
       break;
     
     // Both twinkle red color mode
@@ -569,7 +575,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // update current light mode
-      currMode = TWINKLE;
+      lightMode.currMode = TWINKLE;
       break;
 
     // Both twinkle rainbow mode
@@ -585,7 +591,7 @@ void decode_command() {
       narrowStripParams.rainbow = true;
 
       // Update current light mode
-      currMode = TWINKLE;
+      lightMode.currMode = TWINKLE;
       break;
 
     // Single (narrow) white twinkle with static red color mode
@@ -602,7 +608,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // Update current light mode
-      currMode = TWINKLE;
+      lightMode.currMode = TWINKLE;
       break;
     
     // Single (narrow) white twinkle with static random color mode
@@ -619,7 +625,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // Update current light mode
-      currMode = TWINKLE;
+      lightMode.currMode = TWINKLE;
       break;
 
     // Single (narrow) white twinkle with rainbow color mode
@@ -635,7 +641,7 @@ void decode_command() {
       narrowStripParams.rainbow = false;
 
       // update current light mode
-      currMode = TWINKLE;
+      lightMode.currMode = TWINKLE;
       break;
 
     // Select wide only (for brightness or colour change)
@@ -669,7 +675,7 @@ void decode_command() {
     // Music reactive mode (will work on current colours)
     case IR_OK:
       // Update current light mode
-      currMode = MUSIC;
+      lightMode.currMode = MUSIC;
       break;
 
     // Change color clockwise on selection
@@ -690,9 +696,9 @@ void decode_command() {
 
 void loop() {
   // Flag set from interrupt when new command is received
-  if (modeChange) {
+  if (lightMode.modeChange) {
     // Clear flag
-    modeChange = false;
+    lightMode.modeChange = false;
     // Handle new command from interrupt
     decode_command();
   }
