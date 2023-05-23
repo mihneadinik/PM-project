@@ -55,18 +55,27 @@ const uint16_t HUE_TWINKLE_STEP = MAX_HUE / 500;
 // LED states
 enum state {STATIC, TWINKLE, MUSIC, NOTHING};
 
-// used for brightnes and color changes
+// Used for brightness and color changes
 enum direction {INCREASE, DECREASE};
+
+// Structure used to keep runtime parameters of LEDs
+typedef struct {
+  uint8_t saturation;
+  uint8_t brightness;
+  uint8_t brightness_save; // helps restore previous value after music mode
+  uint16_t hue;
+  bool selected; // changes of color and brightness will only apply if true
+  bool rainbow; // color cycling will only apply if true
+  bool twinkle; // brightness cycling will only apply if true
+} stripParams_t;
 
 // Neopixels
 Adafruit_NeoPixel pixelsWide(NUM_PIXELS, WIDE_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixelsNarrow(NUM_PIXELS, NARROW_PIN, NEO_GRB + NEO_KHZ800);
 
 // Neopixels values
-uint8_t saturationWide, brightnessWide, brightnessWide_copy;
-uint16_t hueWide;
-uint8_t saturationNarrow, brightnessNarrow, brightnessNarrow_copy;
-uint16_t hueNarrow;
+stripParams_t wideStripParams;
+stripParams_t narrowStripParams;
 
 // Program values
 uint8_t command;
@@ -74,9 +83,6 @@ state prevMode, currMode;
 uint8_t twinkleOffset;
 bool modeChange;
 bool twinkleChange;
-bool selectWide, selectNarrow;
-bool rainbowWide, rainbowNarrow;
-bool twinkleWide, twinkleNarrow;
 
 // Music reactive values
 bool musicEnabled, brightnessChanged;
@@ -103,16 +109,16 @@ ISR(ADC_vect) {
   uint8_t brightnessWide_new = (externNoise + ((externNoise > 10) ? 10 + rand() % 30 : 0)) % MAX_BRIGHTNESS;
   
   // Only change with 3 quarters of the difference for smoothness
-  if (brightnessNarrow_new > brightnessNarrow) {
-    brightnessNarrow = (uint8_t)(brightnessNarrow + (brightnessNarrow_new - brightnessNarrow) * 0.75) % MAX_BRIGHTNESS;
+  if (brightnessNarrow_new > narrowStripParams.brightness) {
+    narrowStripParams.brightness = (uint8_t)(narrowStripParams.brightness + (brightnessNarrow_new - narrowStripParams.brightness) * 0.75) % MAX_BRIGHTNESS;
   } else {
-    brightnessNarrow = (uint8_t)(brightnessNarrow - (brightnessNarrow - brightnessNarrow_new) * 0.75) % MAX_BRIGHTNESS;
+    narrowStripParams.brightness = (uint8_t)(narrowStripParams.brightness - (narrowStripParams.brightness - brightnessNarrow_new) * 0.75) % MAX_BRIGHTNESS;
   }
 
-  if (brightnessWide_new > brightnessWide) {
-    brightnessWide = (uint8_t)(brightnessWide + (brightnessWide_new - brightnessWide) * 0.75) % MAX_BRIGHTNESS;
+  if (brightnessWide_new > wideStripParams.brightness) {
+    wideStripParams.brightness = (uint8_t)(wideStripParams.brightness + (brightnessWide_new - wideStripParams.brightness) * 0.75) % MAX_BRIGHTNESS;
   } else {
-    brightnessWide = (uint8_t)(brightnessWide - (brightnessWide - brightnessWide_new) * 0.75) % MAX_BRIGHTNESS;
+    wideStripParams.brightness = (uint8_t)(wideStripParams.brightness - (wideStripParams.brightness - brightnessWide_new) * 0.75) % MAX_BRIGHTNESS;
   }
 
   // Set flag to update brightness
@@ -231,12 +237,12 @@ void start_music_timer() {
 
 void set_initial_values() {
   // Neopixel params
-  hueWide = HUE_RED;
-  saturationWide = SATURATION_COLOR;
-  brightnessWide = MAX_BRIGHTNESS;
-  hueNarrow = HUE_RED;
-  saturationNarrow = SATURATION_COLOR;
-  brightnessNarrow = MAX_BRIGHTNESS;
+  wideStripParams.hue = HUE_RED;
+  wideStripParams.saturation = SATURATION_COLOR;
+  wideStripParams.brightness = MAX_BRIGHTNESS;
+  narrowStripParams.hue = HUE_RED;
+  narrowStripParams.saturation = SATURATION_COLOR;
+  narrowStripParams.brightness = MAX_BRIGHTNESS;
 
   // Program params (starts on white-red twinkle)
   command = IR_7;
@@ -245,12 +251,12 @@ void set_initial_values() {
   twinkleOffset = 0;
   modeChange = true;
   twinkleChange = false;
-  selectWide = true;
-  selectNarrow = true;
-  rainbowWide = false;
-  rainbowNarrow = false;
-  twinkleWide = false;
-  twinkleNarrow = false;
+  wideStripParams.selected = true;
+  narrowStripParams.selected = true;
+  wideStripParams.rainbow = false;
+  narrowStripParams.rainbow = false;
+  wideStripParams.twinkle = false;
+  narrowStripParams.twinkle = false;
   musicEnabled = false;
   brightnessChanged = false;
 }
@@ -277,33 +283,33 @@ uint16_t get_random_color() {
 
 // Only affects the current selection of LEDs
 void change_brightness(direction dir) {
-  if (selectWide) {
+  if (wideStripParams.selected) {
     // Adjust step dynamically (brightness changes below 50 are perceived better)
-    uint8_t step = (brightnessWide > 50) ? LARGE_BRIGHTNESS_STEP :
-                    (brightnessWide == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
-                      (brightnessWide < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
+    uint8_t step = (wideStripParams.brightness > 50) ? LARGE_BRIGHTNESS_STEP :
+                    (wideStripParams.brightness == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
+                      (wideStripParams.brightness < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
 
     if (dir == INCREASE) {
-      brightnessWide = min(brightnessWide + step, MAX_BRIGHTNESS);
+      wideStripParams.brightness = min(wideStripParams.brightness + step, MAX_BRIGHTNESS);
     }
 
     if (dir == DECREASE) {
-      brightnessWide = max(brightnessWide - step, MIN_BRIGHTNESS);
+      wideStripParams.brightness = max(wideStripParams.brightness - step, MIN_BRIGHTNESS);
     }
   }
 
-  if (selectNarrow) {
+  if (narrowStripParams.selected) {
     // Adjust step dynamically (brightness changes below 50 are perceived better)
-    uint8_t step = (brightnessNarrow > 50) ? LARGE_BRIGHTNESS_STEP :
-                    (brightnessNarrow == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
-                      (brightnessNarrow < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
+    uint8_t step = (narrowStripParams.brightness > 50) ? LARGE_BRIGHTNESS_STEP :
+                    (narrowStripParams.brightness == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
+                      (narrowStripParams.brightness < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
 
     if (dir == INCREASE) {
-      brightnessNarrow = min(brightnessNarrow + step, MAX_BRIGHTNESS);
+      narrowStripParams.brightness = min(narrowStripParams.brightness + step, MAX_BRIGHTNESS);
     } 
 
     if (dir == DECREASE) {
-      brightnessNarrow = max(brightnessNarrow - step, MIN_BRIGHTNESS);
+      narrowStripParams.brightness = max(narrowStripParams.brightness - step, MIN_BRIGHTNESS);
     }
   }
 
@@ -315,28 +321,28 @@ void change_brightness(direction dir) {
 
 // Only affects the current selection of LEDs
 void change_color(direction dir) {
-  if (selectWide) {
+  if (wideStripParams.selected) {
     if (dir == INCREASE) {
-      hueWide = (hueWide + HUE_STEP) % MAX_HUE;
+      wideStripParams.hue = (wideStripParams.hue + HUE_STEP) % MAX_HUE;
     }
 
     if (dir == DECREASE) {
-      hueWide = (hueWide - HUE_STEP) % MAX_HUE;
+      wideStripParams.hue = (wideStripParams.hue - HUE_STEP) % MAX_HUE;
     }
 
-    saturationWide = SATURATION_COLOR;
+    wideStripParams.saturation = SATURATION_COLOR;
   }
 
-  if (selectNarrow) {
+  if (narrowStripParams.selected) {
     if (dir == INCREASE) {
-      hueNarrow = (hueNarrow + HUE_STEP) % MAX_HUE;
+      narrowStripParams.hue = (narrowStripParams.hue + HUE_STEP) % MAX_HUE;
     } 
 
     if (dir == DECREASE) {
-      hueNarrow = (hueNarrow - HUE_STEP) % MAX_HUE;
+      narrowStripParams.hue = (narrowStripParams.hue - HUE_STEP) % MAX_HUE;
     }
 
-    saturationNarrow = SATURATION_COLOR;
+    narrowStripParams.saturation = SATURATION_COLOR;
   }
 
   // Change mode to actually apply the changes
@@ -352,13 +358,13 @@ void static_mode() {
   pixelsNarrow.clear();
 
   // Set brightness
-  pixelsWide.setBrightness(brightnessWide);
-  pixelsNarrow.setBrightness(brightnessNarrow);
+  pixelsWide.setBrightness(wideStripParams.brightness);
+  pixelsNarrow.setBrightness(narrowStripParams.brightness);
 
   // Set color (transform HSV spectrum to RGB)
   for (int i = 0; i < NUM_PIXELS; i++) {
-    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide));
-    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow));
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation));
   }
 
   // Apply changes
@@ -368,18 +374,18 @@ void static_mode() {
 
 void _execute_twinkle() {
   // Update LEDs values
-  pixelsWide.setBrightness(brightnessWide);
-  pixelsNarrow.setBrightness(brightnessNarrow);
+  pixelsWide.setBrightness(wideStripParams.brightness);
+  pixelsNarrow.setBrightness(narrowStripParams.brightness);
 
   // Update each individual pixel values
   for (uint8_t i = 0; i < NUM_PIXELS; i++) {
     // Narrow strip is always cycling
-    pixelsNarrow.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
+    pixelsNarrow.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
     // Wide strip might be static
-    if (twinkleWide) {
-      pixelsWide.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
+    if (wideStripParams.twinkle) {
+      pixelsWide.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
     } else {
-      pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide));
+      pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation));
     }
   }
 
@@ -388,14 +394,14 @@ void _execute_twinkle() {
   pixelsNarrow.show();
 
   // Increase hue values for rainbow effect
-  if (rainbowWide) {
-    hueWide += HUE_TWINKLE_STEP;
-    hueWide %= MAX_HUE;
+  if (wideStripParams.rainbow) {
+    wideStripParams.hue += HUE_TWINKLE_STEP;
+    wideStripParams.hue %= MAX_HUE;
   }
 
-  if (rainbowNarrow) {
-    hueNarrow += HUE_TWINKLE_STEP;
-    hueNarrow %= MAX_HUE;
+  if (narrowStripParams.rainbow) {
+    narrowStripParams.hue += HUE_TWINKLE_STEP;
+    narrowStripParams.hue %= MAX_HUE;
   }
 }
 
@@ -455,8 +461,8 @@ void update_ADC_status() {
   // Enable ADC when music mode is selected
   if (currMode == MUSIC && prevMode != MUSIC) {
     // Save previous brightness values
-    brightnessWide_copy = brightnessWide;
-    brightnessNarrow_copy = brightnessNarrow;
+    wideStripParams.brightness_save = wideStripParams.brightness;
+    narrowStripParams.brightness_save = narrowStripParams.brightness;
 
     // Set music mode flag and start its timer
     musicEnabled = true;
@@ -466,8 +472,8 @@ void update_ADC_status() {
   // Disable ADC when music mode is changed
   if (musicEnabled && currMode != MUSIC) {
     // Restore previous brightness values
-    brightnessWide = brightnessWide_copy;
-    brightnessNarrow = brightnessNarrow_copy;
+    wideStripParams.brightness = wideStripParams.brightness_save;
+    narrowStripParams.brightness = narrowStripParams.brightness_save;
 
     // Clear music mode flag and stop its timer
     musicEnabled = false;
@@ -484,14 +490,14 @@ void decode_command() {
     // Both static white color mode
     case IR_1:
       // Set white color (only need max saturation)
-      saturationWide = SATURATION_WHITE;
-      saturationNarrow = SATURATION_WHITE;
+      wideStripParams.saturation = SATURATION_WHITE;
+      narrowStripParams.saturation = SATURATION_WHITE;
 
       // Clear rainbow and twinkle flags
-      twinkleWide = false;
-      twinkleNarrow = false;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = false;
+      narrowStripParams.twinkle = false;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // Update current light mode
       currMode = STATIC;
@@ -500,17 +506,17 @@ void decode_command() {
     // Both static red color mode
     case IR_2:
       // Set color specific saturation value
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_COLOR;
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_COLOR;
       // Set red color 
-      hueWide = HUE_RED;
-      hueNarrow = HUE_RED;
+      wideStripParams.hue = HUE_RED;
+      narrowStripParams.hue = HUE_RED;
 
       // Clear rainbow and twinkle flags
-      twinkleWide = false;
-      twinkleNarrow = false;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = false;
+      narrowStripParams.twinkle = false;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // Update current light mode
       currMode = STATIC;
@@ -519,16 +525,16 @@ void decode_command() {
     // Both static random color mode
     case IR_3:
       // Set color specific saturation value
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_COLOR;
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_COLOR;
       // Choose a random color
-      hueWide = hueNarrow = get_random_color();
+      wideStripParams.hue = narrowStripParams.hue = get_random_color();
 
       // Clear rainbow and twinkle flags
-      twinkleWide = false;
-      twinkleNarrow = false;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = false;
+      narrowStripParams.twinkle = false;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // Update current light mode
       currMode = STATIC;
@@ -537,14 +543,14 @@ void decode_command() {
     // Both twinkle white color mode
     case IR_4:
       // Set white color (only need max saturation)
-      saturationWide = SATURATION_WHITE;
-      saturationNarrow = SATURATION_WHITE;
+      wideStripParams.saturation = SATURATION_WHITE;
+      narrowStripParams.saturation = SATURATION_WHITE;
 
       // Set twinkle flag (both strips) and clear rainbow flag
-      twinkleWide = true;
-      twinkleNarrow = true;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = true;
+      narrowStripParams.twinkle = true;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // update current light mode
       currMode = TWINKLE;
@@ -553,17 +559,17 @@ void decode_command() {
     // Both twinkle red color mode
     case IR_5:
       // Set color specific saturation value
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_COLOR;
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_COLOR;
       // Set red color
-      hueWide = HUE_RED;
-      hueNarrow = HUE_RED;
+      wideStripParams.hue = HUE_RED;
+      narrowStripParams.hue = HUE_RED;
       
       // Set twinkle flag (both strips) and clear rainbow flag
-      twinkleWide = true;
-      twinkleNarrow = true;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = true;
+      narrowStripParams.twinkle = true;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // update current light mode
       currMode = TWINKLE;
@@ -572,14 +578,14 @@ void decode_command() {
     // Both twinkle rainbow mode
     case IR_6:
       // Set color specific saturation value
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_COLOR;
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_COLOR;
 
       // Set twinkle (both strips) and rainbow flags
-      twinkleWide = true;
-      twinkleNarrow = true;
-      rainbowWide = true;
-      rainbowNarrow = true;
+      wideStripParams.twinkle = true;
+      narrowStripParams.twinkle = true;
+      wideStripParams.rainbow = true;
+      narrowStripParams.rainbow = true;
 
       // Update current light mode
       currMode = TWINKLE;
@@ -588,15 +594,15 @@ void decode_command() {
     // Single (narrow) white twinkle with static red color mode
     case IR_7:
       // Set colors
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_WHITE;
-      hueWide = HUE_RED;
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_WHITE;
+      wideStripParams.hue = HUE_RED;
 
       // Set twinkle (one strip) flag and clear rainbow flag
-      twinkleWide = false;
-      twinkleNarrow = true;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = false;
+      narrowStripParams.twinkle = true;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // Update current light mode
       currMode = TWINKLE;
@@ -605,15 +611,15 @@ void decode_command() {
     // Single (narrow) white twinkle with static random color mode
     case IR_8:
       // Set colors
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_WHITE;
-      hueWide = get_random_color();
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_WHITE;
+      wideStripParams.hue = get_random_color();
 
       // Set twinkle (one strip) flag and clear rainbow flag
-      twinkleWide = false;
-      twinkleNarrow = true;
-      rainbowWide = false;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = false;
+      narrowStripParams.twinkle = true;
+      wideStripParams.rainbow = false;
+      narrowStripParams.rainbow = false;
 
       // Update current light mode
       currMode = TWINKLE;
@@ -622,14 +628,14 @@ void decode_command() {
     // Single (narrow) white twinkle with rainbow color mode
     case IR_9:
       // Set colors
-      saturationWide = SATURATION_COLOR;
-      saturationNarrow = SATURATION_WHITE;
+      wideStripParams.saturation = SATURATION_COLOR;
+      narrowStripParams.saturation = SATURATION_WHITE;
 
       // Set twinkle (one strip) flag and set rainbow flag
-      twinkleWide = false;
-      twinkleNarrow = true;
-      rainbowWide = true;
-      rainbowNarrow = false;
+      wideStripParams.twinkle = false;
+      narrowStripParams.twinkle = true;
+      wideStripParams.rainbow = true;
+      narrowStripParams.rainbow = false;
 
       // update current light mode
       currMode = TWINKLE;
@@ -637,20 +643,20 @@ void decode_command() {
 
     // Select wide only (for brightness or colour change)
     case IR_STAR:
-      selectWide = true;
-      selectNarrow = false;
+      wideStripParams.selected = true;
+      narrowStripParams.selected = false;
       break;
     
     // Select both (for brightness or colour change)
     case IR_0:
-      selectWide = true;
-      selectNarrow = true;
+      wideStripParams.selected = true;
+      narrowStripParams.selected = true;
       break;
 
     // Select narrow only (for brightness or colour change)
     case IR_HASHTAG:
-      selectNarrow = true;
-      selectWide = false;
+      narrowStripParams.selected = true;
+      wideStripParams.selected = false;
       break;
 
     // Increase brightness on selection
