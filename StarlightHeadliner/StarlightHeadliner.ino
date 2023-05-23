@@ -34,23 +34,23 @@ const uint16_t HUE_STEP = MAX_HUE / 10;
 const uint16_t HUE_TWINKLE_STEP = MAX_HUE / 500;
 
 // Button decoded values
-#define IR_1 69
-#define IR_2 70
-#define IR_3 71
-#define IR_4 68
-#define IR_5 64
-#define IR_6 67
-#define IR_7 7
-#define IR_8 21
-#define IR_9 9
-#define IR_STAR 22
-#define IR_0 25
-#define IR_HASHTAG 13
-#define IR_UP 24
-#define IR_LEFT 8
-#define IR_OK 28
-#define IR_RIGHT 90
-#define IR_DOWN 82
+const uint8_t IR_1 = 69;
+const uint8_t IR_2 = 70;
+const uint8_t IR_3 = 71;
+const uint8_t IR_4 = 68;
+const uint8_t IR_5 = 64;
+const uint8_t IR_6 = 67;
+const uint8_t IR_7 = 7;
+const uint8_t IR_8 = 21;
+const uint8_t IR_9 = 9;
+const uint8_t IR_STAR = 22;
+const uint8_t IR_0 = 25;
+const uint8_t IR_HASHTAG = 13;
+const uint8_t IR_UP = 24;
+const uint8_t IR_LEFT = 8;
+const uint8_t IR_OK = 28;
+const uint8_t IR_RIGHT = 90;
+const uint8_t IR_DOWN = 82;
 
 // LED states
 enum state {STATIC, TWINKLE, MUSIC, NOTHING};
@@ -241,6 +241,12 @@ void set_initial_values() {
   narrowStripParams.hue = HUE_RED;
   narrowStripParams.saturation = SATURATION_COLOR;
   narrowStripParams.brightness = MAX_BRIGHTNESS;
+  wideStripParams.selected = true;
+  narrowStripParams.selected = true;
+  wideStripParams.rainbow = false;
+  narrowStripParams.rainbow = false;
+  wideStripParams.twinkle = false;
+  narrowStripParams.twinkle = false;
 
   // Program params (starts on white-red twinkle)
   command = IR_7;
@@ -249,24 +255,15 @@ void set_initial_values() {
   twinkleLEDOffset = 0;
   modeChange = true;
   twinkleChange = false;
-  wideStripParams.selected = true;
-  narrowStripParams.selected = true;
-  wideStripParams.rainbow = false;
-  narrowStripParams.rainbow = false;
-  wideStripParams.twinkle = false;
-  narrowStripParams.twinkle = false;
   brightnessChanged = false;
 }
 
 void setup() {
-  Serial.begin(9600);
   // Initial setups
   setup_receiver_and_interrupts();
   setup_timer1();
   setup_ADC();
   set_initial_values();
-
-  Serial.println("Starting");
 
   // Neopixels startup
   pixelsWide.begin();
