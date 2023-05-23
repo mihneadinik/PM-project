@@ -62,11 +62,11 @@ enum direction {INCREASE, DECREASE};
 typedef struct {
   uint8_t saturation;
   uint8_t brightness;
-  uint8_t brightness_save; // helps restore previous value after music mode
+  uint8_t brightness_save; // Helps restore previous value after music mode
   uint16_t hue;
-  bool selected; // changes of color and brightness will only apply if true
-  bool rainbow; // color cycling will only apply if true
-  bool twinkle; // brightness cycling will only apply if true
+  bool selected; // Changes of color and brightness will only apply if true
+  bool rainbow; // Color cycling will only apply if true
+  bool twinkle; // Brightness cycling will only apply if true
 } stripParams_t;
 
 // Neopixels
@@ -78,14 +78,12 @@ stripParams_t wideStripParams;
 stripParams_t narrowStripParams;
 
 // Program values
-uint8_t command;
-state prevMode, currMode;
-uint8_t twinkleOffset;
-bool modeChange;
-bool twinkleChange;
-
-// Music reactive values
-bool musicEnabled, brightnessChanged;
+uint8_t command; // Received from the remote
+state prevMode, currMode; // Light modes
+uint8_t twinkleLEDOffset; // Blacked out LED position during twinkle mode
+bool modeChange; // Flag set in interrupt routine so a new command will be decoded in loop
+bool twinkleChange; // Flag set in timer interrupt so the twinkle mode will advance
+bool brightnessChanged; // Flag set after ADC conversion to update LEDs brightness
 
 // Interrupt routine for twinkle effect
 ISR(TIMER1_COMPA_vect) {
@@ -100,9 +98,8 @@ ISR(TIMER1_COMPB_vect) {
 
 // Interrupt routine ADC
 ISR(ADC_vect) {
-  // Read conversion and set brightness accordingly
+  // Read conversion and set brightness accordingly (no less than 10 -> 4%)
   uint8_t externNoise = (ADCH > 10) ? ADCH : 10;
-  Serial.println(externNoise);
 
   uint8_t brightnessNarrow_new = externNoise;
   // Add a random brightness increase
@@ -115,6 +112,7 @@ ISR(ADC_vect) {
     narrowStripParams.brightness = (uint8_t)(narrowStripParams.brightness - (narrowStripParams.brightness - brightnessNarrow_new) * 0.75) % MAX_BRIGHTNESS;
   }
 
+  // Only change with 3 quarters of the difference for smoothness
   if (brightnessWide_new > wideStripParams.brightness) {
     wideStripParams.brightness = (uint8_t)(wideStripParams.brightness + (brightnessWide_new - wideStripParams.brightness) * 0.75) % MAX_BRIGHTNESS;
   } else {
@@ -248,7 +246,7 @@ void set_initial_values() {
   command = IR_7;
   currMode = TWINKLE;
   prevMode = TWINKLE;
-  twinkleOffset = 0;
+  twinkleLEDOffset = 0;
   modeChange = true;
   twinkleChange = false;
   wideStripParams.selected = true;
@@ -257,7 +255,6 @@ void set_initial_values() {
   narrowStripParams.rainbow = false;
   wideStripParams.twinkle = false;
   narrowStripParams.twinkle = false;
-  musicEnabled = false;
   brightnessChanged = false;
 }
 
@@ -380,10 +377,10 @@ void _execute_twinkle() {
   // Update each individual pixel values
   for (uint8_t i = 0; i < NUM_PIXELS; i++) {
     // Narrow strip is always cycling
-    pixelsNarrow.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
+    pixelsNarrow.setPixelColor((i + twinkleLEDOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
     // Wide strip might be static
     if (wideStripParams.twinkle) {
-      pixelsWide.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
+      pixelsWide.setPixelColor((i + twinkleLEDOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
     } else {
       pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation));
     }
@@ -410,7 +407,7 @@ void twinkle_mode() {
   if (twinkleChange) {
     twinkleChange = false;
     // Increase blacked out LED position on ring
-    twinkleOffset = (twinkleOffset + 1) % NUM_PIXELS;
+    twinkleLEDOffset = (twinkleLEDOffset + 1) % NUM_PIXELS;
     _execute_twinkle();
   }
 }
@@ -464,19 +461,17 @@ void update_ADC_status() {
     wideStripParams.brightness_save = wideStripParams.brightness;
     narrowStripParams.brightness_save = narrowStripParams.brightness;
 
-    // Set music mode flag and start its timer
-    musicEnabled = true;
+    // Start timer for ADC conversions
     start_music_timer();
   }
 
   // Disable ADC when music mode is changed
-  if (musicEnabled && currMode != MUSIC) {
+  if (currMode != MUSIC && prevMode == MUSIC) {
     // Restore previous brightness values
     wideStripParams.brightness = wideStripParams.brightness_save;
     narrowStripParams.brightness = narrowStripParams.brightness_save;
 
-    // Clear music mode flag and stop its timer
-    musicEnabled = false;
+    // Disable timer for ADC conversions
     stop_music_timer();
   }
 }
