@@ -97,6 +97,7 @@ ISR(TIMER1_COMPB_vect) {
 ISR(ADC_vect) {
   // read conversion and set brightness accordingly
   externNoise = (ADCH > 10) ? ADCH : 10;
+  Serial.println(externNoise);
 
   uint8_t brightnessNarrow_new = externNoise;
   // add a random brightness increase
@@ -133,10 +134,10 @@ void setup_ADC() {
   ADCSRA = 0;
   ADCSRA |= (1 << ADIE);  // enable ADC interrupts
 
-  ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);  // Setează prescaler la 128 pentru a obține o frecvență de eșantionare corespunzătoare
+  ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);  // set prescaler to 128
 
-  ADMUX |= (1 << REFS0) | (1 << REFS1);  // Setează referința de tensiune la 1.1V
-  ADMUX |= (1 << ADLAR);  // Setează rezultatul ADC să fie aliniat la stânga (8 biți)
+  ADMUX |= (1 << REFS0) | (1 << REFS1);  // 1.1V refference
+  ADMUX |= (1 << ADLAR);  // 8 bit conversion
 
   sei();
 }
@@ -198,6 +199,7 @@ void stop_music_timer() {
 void start_twinkle_timer() {
   cli();
 
+  OCR1A = TIMER_TWINKLE_COMPARE;
   TIMSK1 |= (1 << OCIE1A);
   Serial.println("Twinkle start");
 
@@ -208,6 +210,7 @@ void start_twinkle_timer() {
 void start_music_timer() {
   cli();
 
+  OCR1A = TIMER_MUSIC_COMPARE;
   TIMSK1 |= (1 << OCIE1B);
   enable_ADC();
   Serial.println("Music start");
