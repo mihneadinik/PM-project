@@ -7,31 +7,31 @@
 #define NARROW_PIN 7
 
 // Constants
-#define NUM_PIXELS 7
-#define MAX_BRIGHTNESS 250
-#define MIN_BRIGHTNESS 0
-#define SMALL_BRIGHTNESS_STEP 10
-#define LARGE_BRIGHTNESS_STEP 25
-#define SATURATION_WHITE 0
-#define SATURATION_COLOR 255
-#define VALUE_COLOR 255
-#define VALUE_BLACK 0
-#define MAX_HUE 65535 // 16 bits max
-#define TWINKLE_DELAY 250
-#define MUSIC_CAPTURE_DELAY 100
-#define TIMER_TWINKLE_COMPARE (F_CPU / 256 / 1000 * TWINKLE_DELAY)
-#define TIMER_MUSIC_COMPARE (F_CPU / 256 / 1000 * MUSIC_CAPTURE_DELAY)
-#define CYCLE_FADE_VALUE (255 / NUM_PIXELS)
+const uint8_t NUM_PIXELS = 7;
+const uint8_t MAX_BRIGHTNESS = 250;
+const uint8_t MIN_BRIGHTNESS = 0;
+const uint8_t SMALL_BRIGHTNESS_STEP = 10;
+const uint8_t LARGE_BRIGHTNESS_STEP = 25;
+const uint8_t SATURATION_WHITE = 0;
+const uint8_t SATURATION_COLOR = 255;
+const uint8_t VALUE_COLOR = 255;
+const uint8_t VALUE_BLACK = 0;
+const uint16_t MAX_HUE = 65535; // 16 bits max
+const uint16_t TWINKLE_DELAY = 250; // can go up to 1048ms for 1/256 prescaler
+const uint16_t MUSIC_CAPTURE_DELAY = 100; // can go up to 1048ms for 1/256 prescaler
+const uint16_t TIMER_TWINKLE_COMPARE = (F_CPU / 256 / 1000 * TWINKLE_DELAY);
+const uint16_t TIMER_MUSIC_COMPARE = (F_CPU / 256 / 1000 * MUSIC_CAPTURE_DELAY);
+const uint8_t CYCLE_FADE_VALUE = (255 / NUM_PIXELS);
 
 // Color constants
-#define HUE_RED 0
-#define HUE_YELLOW 1 * (MAX_HUE / 6)
-#define HUE_GREEN 2 * (MAX_HUE / 6)
-#define HUE_CIAN 3 * (MAX_HUE / 6)
-#define HUE_BLUE 4 * (MAX_HUE / 6)
-#define HUE_MAGENTA 5 * (MAX_HUE / 6)
-#define HUE_STEP MAX_HUE / 10
-#define HUE_TWINKLE_STEP MAX_HUE / 500
+const uint16_t HUE_RED = 0;
+const uint16_t HUE_YELLOW = 1 * (MAX_HUE / 6);
+const uint16_t HUE_GREEN = 2 * (MAX_HUE / 6);
+const uint16_t HUE_CIAN = 3 * (MAX_HUE / 6);
+const uint16_t HUE_BLUE = 4 * (MAX_HUE / 6);
+const uint16_t HUE_MAGENTA = 5 * (MAX_HUE / 6);
+const uint16_t HUE_STEP = MAX_HUE / 10;
+const uint16_t HUE_TWINKLE_STEP = MAX_HUE / 500;
 
 // Button decoded values
 #define IR_1 69
@@ -78,8 +78,7 @@ bool selectWide, selectNarrow;
 bool rainbowWide, rainbowNarrow;
 bool twinkleWide, twinkleNarrow;
 
-// Music reactive
-uint8_t externNoise;
+// Music reactive values
 bool musicEnabled, brightnessChanged;
 
 // Interrupt routine for twinkle effect
@@ -89,21 +88,21 @@ ISR(TIMER1_COMPA_vect) {
 
 // Interrupt routine for music input capture
 ISR(TIMER1_COMPB_vect) {
-  // start ADC conversion
+  // Start ADC conversion
   ADCSRA |= (1 << ADSC);
 }
 
 // Interrupt routine ADC
 ISR(ADC_vect) {
-  // read conversion and set brightness accordingly
-  externNoise = (ADCH > 10) ? ADCH : 10;
+  // Read conversion and set brightness accordingly
+  uint8_t externNoise = (ADCH > 10) ? ADCH : 10;
   Serial.println(externNoise);
 
   uint8_t brightnessNarrow_new = externNoise;
-  // add a random brightness increase
+  // Add a random brightness increase
   uint8_t brightnessWide_new = (externNoise + ((externNoise > 10) ? 10 + rand() % 30 : 0)) % MAX_BRIGHTNESS;
   
-  // only change with 3 quarters of the difference for smoothness
+  // Only change with 3 quarters of the difference for smoothness
   if (brightnessNarrow_new > brightnessNarrow) {
     brightnessNarrow = (uint8_t)(brightnessNarrow + (brightnessNarrow_new - brightnessNarrow) * 0.75) % MAX_BRIGHTNESS;
   } else {
@@ -116,104 +115,116 @@ ISR(ADC_vect) {
     brightnessWide = (uint8_t)(brightnessWide - (brightnessWide - brightnessWide_new) * 0.75) % MAX_BRIGHTNESS;
   }
 
-  // set flag to update brightness
+  // Set flag to update brightness
   brightnessChanged = true;
 }
 
-// callback after ISR routine on IR_PIN is over
+// Callback after ISR routine on IR_PIN is over
 void handleReceivedTinyIRData(uint8_t aAddress, uint8_t aCommand, uint8_t aFlags) {
+  // Save received command
   command = aCommand;
+  // Set flag to decode it
   modeChange = true;
 }
 
-// sets the ADC to Free Running mode
+// Sets the ADC to Free Running mode
 void setup_ADC() {
   cli();
 
+  // Clear registers
   ADCSRB = 0;
   ADCSRA = 0;
-  ADCSRA |= (1 << ADIE);  // enable ADC interrupts
 
-  ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);  // set prescaler to 128
+  // Enable ADC interrupts
+  ADCSRA |= (1 << ADIE);
 
-  ADMUX |= (1 << REFS0) | (1 << REFS1);  // 1.1V refference
-  ADMUX |= (1 << ADLAR);  // 8 bit conversion
+  // Set prescaler to 128
+  ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+
+  // Set 1.1V refference
+  ADMUX |= (1 << REFS0) | (1 << REFS1);
+  // Set 8 bit conversion (to match with maximum brightness)
+  ADMUX |= (1 << ADLAR);
 
   sei();
 }
 
 void enable_ADC() {
-  // enable ADC
+  // Enable ADC
   ADCSRA |= (1 << ADEN);
 }
 
 void disable_ADC() {
-  // disable ADC
+  // Disable ADC
   ADCSRA &= ~(1 << ADEN);
 }
 
-// sets timer1 to compare match on both channels
+// Sets timer1
 void setup_timer1() {
   cli();
 
-  // clear the registers
+  // Clear the registers
   TCNT1 = 0;
   TCCR1A = 0;
   TCCR1B = 0;
-  // set the timer to stop on compare match
+  // Set the timer to stop on compare match
   TCCR1A = 0;
   TCCR1B |= (1 << WGM12);
-  // set prescaler to 256
+  // Set prescaler to 256
   TCCR1B |= (1 << CS12);
-  // set compare value
+  // Set compare values (channel A - twinkle and channel B - music)
   OCR1A = TIMER_TWINKLE_COMPARE;
   OCR1B = TIMER_MUSIC_COMPARE;
-  // activate interrupt on compare match
+  // Activate interrupt on compare match
   TIMSK1 |= (1 << OCIE1A);
 
   sei();
 }
 
-// stops counting for twkinkle changes
+// Stops timer counting channel for twkinkle changes
 void stop_twinkle_timer() {
   cli();
 
+  // Disable channel A interrupt
   TIMSK1 &= ~(1 << OCIE1A);
-  Serial.println("Twinkle end");
   
   sei();
 }
 
-// stops counting for music changes
+// Stops timer counting channel for music changes
 void stop_music_timer() {
   cli();
 
+  // Disable channel B interrupt
   TIMSK1 &= ~(1 << OCIE1B);
+  // Disable ADC
   disable_ADC();
-  Serial.println("Music end");
   
   sei();
 }
 
-// restarts the twinkle counting
+// Restarts the twinkle counting
 void start_twinkle_timer() {
   cli();
 
+  // Change top value
   OCR1A = TIMER_TWINKLE_COMPARE;
+  // Enable channel A interrupt
   TIMSK1 |= (1 << OCIE1A);
-  Serial.println("Twinkle start");
 
   sei();
 }
 
-// restarts the music capture counting
+// Restarts the external sound capture counting
 void start_music_timer() {
   cli();
 
+  // Change top value
   OCR1A = TIMER_MUSIC_COMPARE;
+  // Enable channel B interrupt
   TIMSK1 |= (1 << OCIE1B);
+  // Enable ADC
   enable_ADC();
-  Serial.println("Music start");
 
   sei();
 }
@@ -246,7 +257,7 @@ void set_initial_values() {
 
 void setup() {
   Serial.begin(9600);
-  // initial setups
+  // Initial setups
   setup_receiver_and_interrupts();
   setup_timer1();
   setup_ADC();
@@ -259,14 +270,15 @@ void setup() {
   pixelsNarrow.begin();
 }
 
+// Selects 1 out of 10 random colors
 uint16_t get_random_color() {
   return (rand() % 10) * HUE_STEP;
 }
 
-// only affects the current selection of LEDs
+// Only affects the current selection of LEDs
 void change_brightness(direction dir) {
   if (selectWide) {
-    // adjust step dynamically
+    // Adjust step dynamically (brightness changes below 50 are perceived better)
     uint8_t step = (brightnessWide > 50) ? LARGE_BRIGHTNESS_STEP :
                     (brightnessWide == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
                       (brightnessWide < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
@@ -274,13 +286,14 @@ void change_brightness(direction dir) {
     if (dir == INCREASE) {
       brightnessWide = min(brightnessWide + step, MAX_BRIGHTNESS);
     }
+
     if (dir == DECREASE) {
       brightnessWide = max(brightnessWide - step, MIN_BRIGHTNESS);
     }
   }
 
   if (selectNarrow) {
-    // adjust step dynamically
+    // Adjust step dynamically (brightness changes below 50 are perceived better)
     uint8_t step = (brightnessNarrow > 50) ? LARGE_BRIGHTNESS_STEP :
                     (brightnessNarrow == 50 && dir == DECREASE) ? SMALL_BRIGHTNESS_STEP :
                       (brightnessNarrow < 50) ? SMALL_BRIGHTNESS_STEP : LARGE_BRIGHTNESS_STEP;
@@ -288,23 +301,25 @@ void change_brightness(direction dir) {
     if (dir == INCREASE) {
       brightnessNarrow = min(brightnessNarrow + step, MAX_BRIGHTNESS);
     } 
+
     if (dir == DECREASE) {
       brightnessNarrow = max(brightnessNarrow - step, MIN_BRIGHTNESS);
     }
   }
 
-  // change mode to actually apply the changes
+  // Change mode to actually apply the changes
   if (currMode == NOTHING) {
     currMode = STATIC;
   }
 }
 
-// only affects the current selection of LEDs
+// Only affects the current selection of LEDs
 void change_color(direction dir) {
   if (selectWide) {
     if (dir == INCREASE) {
       hueWide = (hueWide + HUE_STEP) % MAX_HUE;
     }
+
     if (dir == DECREASE) {
       hueWide = (hueWide - HUE_STEP) % MAX_HUE;
     }
@@ -316,6 +331,7 @@ void change_color(direction dir) {
     if (dir == INCREASE) {
       hueNarrow = (hueNarrow + HUE_STEP) % MAX_HUE;
     } 
+
     if (dir == DECREASE) {
       hueNarrow = (hueNarrow - HUE_STEP) % MAX_HUE;
     }
@@ -323,7 +339,7 @@ void change_color(direction dir) {
     saturationNarrow = SATURATION_COLOR;
   }
 
-  // change mode to actually apply the changes
+  // Change mode to actually apply the changes
   if (currMode == NOTHING) {
     currMode = STATIC;
   }
@@ -355,9 +371,11 @@ void _execute_twinkle() {
   pixelsWide.setBrightness(brightnessWide);
   pixelsNarrow.setBrightness(brightnessNarrow);
 
-  for (int i = 0; i < NUM_PIXELS; i++) {
+  // Update each individual pixel values
+  for (uint8_t i = 0; i < NUM_PIXELS; i++) {
     // Narrow strip is always cycling
     pixelsNarrow.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(hueNarrow, saturationNarrow, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
+    // Wide strip might be static
     if (twinkleWide) {
       pixelsWide.setPixelColor((i + twinkleOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(hueWide, saturationWide, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
     } else {
@@ -385,7 +403,7 @@ void twinkle_mode() {
   // Interrupt signaled it's time to update the twinkle effect
   if (twinkleChange) {
     twinkleChange = false;
-    // increase blacked out LED position on ring
+    // Increase blacked out LED position on ring
     twinkleOffset = (twinkleOffset + 1) % NUM_PIXELS;
     _execute_twinkle();
   }
@@ -395,39 +413,38 @@ void twinkle_mode() {
 void execute_mode() {
   switch (currMode) {
     case STATIC:
-      // Serial.println("STATIC");
       static_mode();
-      // change mode to blank state after applying changes
+      // Change mode to blank state after applying changes
       currMode = NOTHING;
       break;
     
     case TWINKLE:
-      // Serial.println("TWINKLE");
       twinkle_mode();
       break;
 
     case MUSIC:
-      // Serial.println("MUSIC");
+      // Flag set at the end of ADC conversion
       if (brightnessChanged) {
-        // update brightness
+        // Update brightness and clear flag
         brightnessChanged = false;
         static_mode();
       }
       break;
     
     case NOTHING:
+      // No need to update anything
       break;
   }
 }
 
 // Enables or disables the timer1 depending on the lighting mode
 void update_timer_status() {
-  // Enable timer
+  // Enable timer when twinkle mode is selected
   if (currMode == TWINKLE && prevMode != TWINKLE) {
     start_twinkle_timer();
   }
 
-  // Disable timer
+  // Disable timer when twinkle mode is changed
   if (prevMode == TWINKLE && currMode != TWINKLE) {
     stop_twinkle_timer();
   }
@@ -435,20 +452,24 @@ void update_timer_status() {
 
 // Enables or disables the ADC depending on the lighting mode
 void update_ADC_status() {
-  // Enable ADC
+  // Enable ADC when music mode is selected
   if (currMode == MUSIC && prevMode != MUSIC) {
-    Serial.println("Enabled ADC");
+    // Save previous brightness values
     brightnessWide_copy = brightnessWide;
     brightnessNarrow_copy = brightnessNarrow;
+
+    // Set music mode flag and start its timer
     musicEnabled = true;
     start_music_timer();
   }
 
-  // Disable ADC
+  // Disable ADC when music mode is changed
   if (musicEnabled && currMode != MUSIC) {
-    Serial.println("Disabled ADC");
+    // Restore previous brightness values
     brightnessWide = brightnessWide_copy;
     brightnessNarrow = brightnessNarrow_copy;
+
+    // Clear music mode flag and stop its timer
     musicEnabled = false;
     stop_music_timer();
   }
@@ -456,206 +477,224 @@ void update_ADC_status() {
 
 // Decodes the code received from remote
 void decode_command() {
-  // save last state
+  // Save last state
   prevMode = currMode;
 
   switch (command) {
     // Both static white color mode
     case IR_1:
-      Serial.println("IR_1");
+      // Set white color (only need max saturation)
       saturationWide = SATURATION_WHITE;
       saturationNarrow = SATURATION_WHITE;
 
+      // Clear rainbow and twinkle flags
       twinkleWide = false;
       twinkleNarrow = false;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // Update current light mode
       currMode = STATIC;
       break;
     
     // Both static red color mode
     case IR_2:
-      Serial.println("IR_2");
+      // Set color specific saturation value
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_COLOR;
+      // Set red color 
       hueWide = HUE_RED;
       hueNarrow = HUE_RED;
 
+      // Clear rainbow and twinkle flags
       twinkleWide = false;
       twinkleNarrow = false;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // Update current light mode
       currMode = STATIC;
       break;
 
     // Both static random color mode
     case IR_3:
-      Serial.println("IR_3");
+      // Set color specific saturation value
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_COLOR;
+      // Choose a random color
       hueWide = hueNarrow = get_random_color();
 
+      // Clear rainbow and twinkle flags
       twinkleWide = false;
       twinkleNarrow = false;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // Update current light mode
       currMode = STATIC;
       break;
     
     // Both twinkle white color mode
     case IR_4:
-      Serial.println("IR_4");
+      // Set white color (only need max saturation)
       saturationWide = SATURATION_WHITE;
       saturationNarrow = SATURATION_WHITE;
 
+      // Set twinkle flag (both strips) and clear rainbow flag
       twinkleWide = true;
       twinkleNarrow = true;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // update current light mode
       currMode = TWINKLE;
       break;
     
     // Both twinkle red color mode
     case IR_5:
-      Serial.println("IR_5");
+      // Set color specific saturation value
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_COLOR;
+      // Set red color
       hueWide = HUE_RED;
       hueNarrow = HUE_RED;
       
+      // Set twinkle flag (both strips) and clear rainbow flag
       twinkleWide = true;
       twinkleNarrow = true;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // update current light mode
       currMode = TWINKLE;
       break;
 
     // Both twinkle rainbow mode
     case IR_6:
-      Serial.println("IR_6");
+      // Set color specific saturation value
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_COLOR;
 
+      // Set twinkle (both strips) and rainbow flags
       twinkleWide = true;
       twinkleNarrow = true;
       rainbowWide = true;
       rainbowNarrow = true;
 
+      // Update current light mode
       currMode = TWINKLE;
       break;
 
     // Single (narrow) white twinkle with static red color mode
     case IR_7:
-      Serial.println("IR_7");
+      // Set colors
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_WHITE;
       hueWide = HUE_RED;
 
+      // Set twinkle (one strip) flag and clear rainbow flag
       twinkleWide = false;
       twinkleNarrow = true;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // Update current light mode
       currMode = TWINKLE;
       break;
     
     // Single (narrow) white twinkle with static random color mode
     case IR_8:
-      Serial.println("IR_8");
+      // Set colors
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_WHITE;
       hueWide = get_random_color();
 
+      // Set twinkle (one strip) flag and clear rainbow flag
       twinkleWide = false;
       twinkleNarrow = true;
       rainbowWide = false;
       rainbowNarrow = false;
 
+      // Update current light mode
       currMode = TWINKLE;
       break;
 
     // Single (narrow) white twinkle with rainbow color mode
     case IR_9:
-      Serial.println("IR_9");
+      // Set colors
       saturationWide = SATURATION_COLOR;
       saturationNarrow = SATURATION_WHITE;
 
+      // Set twinkle (one strip) flag and set rainbow flag
       twinkleWide = false;
       twinkleNarrow = true;
       rainbowWide = true;
       rainbowNarrow = false;
 
+      // update current light mode
       currMode = TWINKLE;
       break;
 
-    // Select wide only
+    // Select wide only (for brightness or colour change)
     case IR_STAR:
-      Serial.println("IR_STAR");
       selectWide = true;
       selectNarrow = false;
       break;
     
-    // Select both
+    // Select both (for brightness or colour change)
     case IR_0:
-      Serial.println("IR_0");
       selectWide = true;
       selectNarrow = true;
       break;
 
-    // Select narrow only
+    // Select narrow only (for brightness or colour change)
     case IR_HASHTAG:
-      Serial.println("IR_HASHTAG");
       selectNarrow = true;
       selectWide = false;
       break;
 
     // Increase brightness on selection
     case IR_UP:
-      Serial.println("IR_UP");
       change_brightness(INCREASE);
       break;
     
     // Change color counter-clockwise on selection
     case IR_LEFT:
-      Serial.println("IR_LEFT");
       change_color(DECREASE);
       break;
 
-    // Music reactive mode
+    // Music reactive mode (will work on current colours)
     case IR_OK:
-      Serial.println("IR_OK");
+      // Update current light mode
       currMode = MUSIC;
       break;
 
     // Change color clockwise on selection
     case IR_RIGHT:
-      Serial.println("IR_RIGHT");
       change_color(INCREASE);
       break;
     
     // Decrease brightness on selection
     case IR_DOWN:
-      Serial.println("IR_DOWN");
       change_brightness(DECREASE);
       break;
   }
 
+  // Timer and ADC checks for current mode configuration
   update_timer_status();
   update_ADC_status();
 }
 
 void loop() {
+  // Flag set from interrupt when new command is received
   if (modeChange) {
-    // handle new command from interrupt
+    // Clear flag
     modeChange = false;
+    // Handle new command from interrupt
     decode_command();
   }
 
+  // Update LEDs based on selected light mode
   execute_mode();
 }
 
