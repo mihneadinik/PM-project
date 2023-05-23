@@ -69,6 +69,12 @@ typedef struct {
   bool twinkle; // Brightness cycling will only apply if true
 } stripParams_t;
 
+// Structure used to keep runtime parameters of twinkle mode
+typedef struct {
+  uint8_t twinkleLEDOffset; // Blacked out LED position during twinkle mode
+  bool twinkleChange; // Flag set in timer interrupt so the twinkle mode will advance
+} twinkleParams_t;
+
 // Neopixels
 Adafruit_NeoPixel pixelsWide(NUM_PIXELS, WIDE_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixelsNarrow(NUM_PIXELS, NARROW_PIN, NEO_GRB + NEO_KHZ800);
@@ -78,16 +84,15 @@ stripParams_t wideStripParams;
 stripParams_t narrowStripParams;
 
 // Program values
+twinkleParams_t twinkleParams;
 uint8_t command; // Received from the remote
 state prevMode, currMode; // Light modes
-uint8_t twinkleLEDOffset; // Blacked out LED position during twinkle mode
 bool modeChange; // Flag set in interrupt routine so a new command will be decoded in loop
-bool twinkleChange; // Flag set in timer interrupt so the twinkle mode will advance
 bool brightnessChanged; // Flag set after ADC conversion to update LEDs brightness
 
 // Interrupt routine for twinkle effect
 ISR(TIMER1_COMPA_vect) {
-  twinkleChange = true;
+  twinkleParams.twinkleChange = true;
 }
 
 // Interrupt routine for music input capture
@@ -252,9 +257,9 @@ void set_initial_values() {
   command = IR_7;
   currMode = TWINKLE;
   prevMode = TWINKLE;
-  twinkleLEDOffset = 0;
+  twinkleParams.twinkleLEDOffset = 0;
+  twinkleParams.twinkleChange = false;
   modeChange = true;
-  twinkleChange = false;
   brightnessChanged = false;
 }
 
@@ -374,10 +379,10 @@ void _execute_twinkle() {
   // Update each individual pixel values
   for (uint8_t i = 0; i < NUM_PIXELS; i++) {
     // Narrow strip is always cycling
-    pixelsNarrow.setPixelColor((i + twinkleLEDOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
+    pixelsNarrow.setPixelColor((i + twinkleParams.twinkleLEDOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, pixelsNarrow.gamma8(i * (255 / NUM_PIXELS))));
     // Wide strip might be static
     if (wideStripParams.twinkle) {
-      pixelsWide.setPixelColor((i + twinkleLEDOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
+      pixelsWide.setPixelColor((i + twinkleParams.twinkleLEDOffset) % NUM_PIXELS, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, pixelsWide.gamma8(i * (255 / NUM_PIXELS))));
     } else {
       pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation));
     }
@@ -401,10 +406,10 @@ void _execute_twinkle() {
 
 void twinkle_mode() {
   // Interrupt signaled it's time to update the twinkle effect
-  if (twinkleChange) {
-    twinkleChange = false;
+  if (twinkleParams.twinkleChange) {
+    twinkleParams.twinkleChange = false;
     // Increase blacked out LED position on ring
-    twinkleLEDOffset = (twinkleLEDOffset + 1) % NUM_PIXELS;
+    twinkleParams.twinkleLEDOffset = (twinkleParams.twinkleLEDOffset + 1) % NUM_PIXELS;
     _execute_twinkle();
   }
 }
