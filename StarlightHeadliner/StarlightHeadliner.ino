@@ -17,6 +17,8 @@
 #define IR_PIN 2
 #define WIDE_PIN 6
 #define NARROW_PIN 7
+#define REVERSE_TRIGGER_PIN 3
+#define SENSORS_TRIGGER_PIN 4
 
 /*************************************************************************************************\
  *                                      Global Variables                                         *
@@ -63,6 +65,37 @@ void setup() {
   pixelsNarrow.begin();
 }
 
+void _changeSensorsPower() {
+  // Change power state
+  sensorParams.poweredOn = !sensorParams.poweredOn;
+
+  // Send power impulse
+  pinMode(SENSORS_TRIGGER_PIN, OUTPUT);
+  digitalWrite(SENSORS_TRIGGER_PIN, LOW);
+  delay(100);
+  // Set pin back to high impedance
+  pinMode(SENSORS_TRIGGER_PIN, INPUT);
+}
+
+void handle_sensors() {
+  // Time passed -> stop timer and turn off sensors
+  if (sensorParams.currOverflows >= SENSORS_OVERFLOWS) {
+    if (sensorParams.poweredOn) {
+      _changeSensorsPower();
+    }
+
+    TIMSK2 &= ~(1 << TOIE2);
+    sensorParams.currOverflows = 0;
+
+    return;
+  }
+
+  // Time has not passed yet -> check if sensors should turn on
+  if (!sensorParams.poweredOn) {
+      _changeSensorsPower();
+    }
+}
+
 void loop() {
   // Flag set from interrupt when new command is received
   if (lightMode.modeChange) {
@@ -73,9 +106,9 @@ void loop() {
   }
 
   if (sensorParams.signalPower) {
-    // stop timer interrupts
-    // clear overflows
-    // power off sensors
+    // Clear flag
+    sensorParams.signalPower = false;
+    handle_sensors();
   }
 
   // Update LEDs based on selected light mode

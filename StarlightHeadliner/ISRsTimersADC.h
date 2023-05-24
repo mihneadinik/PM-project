@@ -22,6 +22,7 @@ ISR(ADC_vect);
 ISR(TIMER1_COMPA_vect);
 ISR(TIMER1_COMPB_vect);
 ISR(TIMER2_OVF_vect);
+ISR(INT1_vect);
 void handleReceivedTinyIRData(uint8_t aAddress, uint8_t aCommand, uint8_t aFlags);
 void setup_ADC();
 void setup_timer1();

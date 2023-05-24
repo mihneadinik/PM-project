@@ -37,6 +37,21 @@ ISR(TIMER2_OVF_vect) {
   }
 }
 
+// Interrupt routine for reverse signal
+ISR(INT1_vect) {
+  // Check if counting has already begun
+  if (!(TIMSK2 & (1 << TOIE2))) {
+    // Activate timer2 overflow interrupt
+    TIMSK2 |= (1 << TOIE2);
+  }
+
+  // Reset overflow counter
+  sensorParams.currOverflows = 0;
+  // Check if sensors need to be turned on
+  sensorParams.signalPower = true;
+  Serial.println("REVERSE");
+}
+
 // Interrupt routine ADC
 ISR(ADC_vect) {
   // Read conversion and set brightness accordingly (no less than 10 -> 4%)
@@ -102,9 +117,6 @@ void setup_timer2() {
   // Set prescaler to 1024
   TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);
 
-  // Activează întreruperile pentru Timer2 la overflow
-  TIMSK2 |= (1 << TOIE2);
-
   sei();
 }
 
@@ -131,7 +143,14 @@ void setup_ADC() {
 }
 
 void setup_reverse_interrupts() {
-  
+  cli();
+
+  // falling edge on PD3
+  EICRA |= (1 << ISC11);
+  // activate interrupt on PD3
+  EIMSK |= (1 << INT1);
+
+  sei();
 }
 
 #endif // _ISRS_TIMERS_ADC_HPP
