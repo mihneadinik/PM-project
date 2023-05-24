@@ -32,6 +32,7 @@ volatile stripParams_t narrowStripParams;
 
 // Program values
 volatile twinkleParams_t twinkleParams;
+volatile sensorsParams_t sensorParams;
 lightMode_t lightMode;
 volatile uint8_t command; // Received from the remote
 volatile bool brightnessChanged; // Flag set after ADC conversion to update LEDs brightness
@@ -52,6 +53,8 @@ void setup() {
   // Initial setups
   setup_receiver_and_interrupts();
   setup_timer1();
+  setup_timer2();
+  setup_reverse_interrupts();
   setup_ADC();
   set_initial_values();
 
@@ -67,6 +70,12 @@ void loop() {
     lightMode.modeChange = false;
     // Handle new command from interrupt
     decode_command();
+  }
+
+  if (sensorParams.signalPower) {
+    // stop timer interrupts
+    // clear overflows
+    // power off sensors
   }
 
   // Update LEDs based on selected light mode
@@ -91,6 +100,11 @@ void set_initial_values() {
   narrowStripParams.rainbow = false;
   wideStripParams.twinkle = false;
   narrowStripParams.twinkle = false;
+
+  // Sensors params
+  sensorParams.currOverflows = 0;
+  sensorParams.poweredOn = false;
+  sensorParams.signalPower = false;
 
   // Program params (starts on white-red twinkle)
   command = IR_7;

@@ -26,6 +26,17 @@ ISR(TIMER1_COMPB_vect) {
   ADCSRA |= (1 << ADSC);
 }
 
+// Interrupt routine for timer2
+ISR(TIMER2_OVF_vect) {
+  if (sensorParams.currOverflows < SENSORS_OVERFLOWS) {
+    // Count 10 seconds
+    sensorParams.currOverflows++;
+  } else {
+    // Time has passed -> turn sensors off
+    sensorParams.signalPower = true;
+  }
+}
+
 // Interrupt routine ADC
 ISR(ADC_vect) {
   // Read conversion and set brightness accordingly (no less than 10 -> 4%)
@@ -61,16 +72,38 @@ void setup_timer1() {
   TCNT1 = 0;
   TCCR1A = 0;
   TCCR1B = 0;
+
   // Set the timer to stop on compare match
   TCCR1A = 0;
   TCCR1B |= (1 << WGM12);
+
   // Set prescaler to 256
   TCCR1B |= (1 << CS12);
+
   // Set compare values (channel A - twinkle and channel B - music)
   OCR1A = TIMER_TWINKLE_COMPARE;
   OCR1B = TIMER_MUSIC_COMPARE;
+
   // Activate interrupt on compare match
   TIMSK1 |= (1 << OCIE1A);
+
+  sei();
+}
+
+// Sets timer2
+void setup_timer2() {
+  cli();
+
+  // Clear the registers
+  TCNT2 = 0;
+  TCCR2A = 0;
+  TCCR2B = 0;
+
+  // Set prescaler to 1024
+  TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);
+
+  // Activează întreruperile pentru Timer2 la overflow
+  TIMSK2 |= (1 << TOIE2);
 
   sei();
 }
@@ -95,6 +128,10 @@ void setup_ADC() {
   ADMUX |= (1 << ADLAR);
 
   sei();
+}
+
+void setup_reverse_interrupts() {
+  
 }
 
 #endif // _ISRS_TIMERS_ADC_HPP
