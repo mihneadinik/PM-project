@@ -32,7 +32,8 @@ ISR(TIMER2_OVF_vect) {
     // Count 10 seconds
     sensorParams.currOverflows++;
   } else {
-    // Time has passed -> turn sensors off
+    // Time has passed -> turn sensors and timer off
+    TIMSK2 &= ~(1 << TOIE2);
     sensorParams.signalPower = true;
   }
 }
@@ -49,7 +50,6 @@ ISR(INT1_vect) {
   sensorParams.currOverflows = 0;
   // Check if sensors need to be turned on
   sensorParams.signalPower = true;
-  Serial.println("REVERSE");
 }
 
 // Interrupt routine ADC

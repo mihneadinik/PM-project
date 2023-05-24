@@ -46,12 +46,15 @@ volatile bool brightnessChanged; // Flag set after ADC conversion to update LEDs
 void set_initial_values();
 void decode_command();
 void execute_mode();
+void _changeSensorsPower();
+void handle_sensors();
 
 /*************************************************************************************************\
  *                                      Arduino functions                                        *
 \*************************************************************************************************/
 
 void setup() {
+  Serial.begin(9600);
   // Initial setups
   setup_receiver_and_interrupts();
   setup_timer1();
@@ -63,37 +66,6 @@ void setup() {
   // Neopixels startup
   pixelsWide.begin();
   pixelsNarrow.begin();
-}
-
-void _changeSensorsPower() {
-  // Change power state
-  sensorParams.poweredOn = !sensorParams.poweredOn;
-
-  // Send power impulse
-  pinMode(SENSORS_TRIGGER_PIN, OUTPUT);
-  digitalWrite(SENSORS_TRIGGER_PIN, LOW);
-  delay(100);
-  // Set pin back to high impedance
-  pinMode(SENSORS_TRIGGER_PIN, INPUT);
-}
-
-void handle_sensors() {
-  // Time passed -> stop timer and turn off sensors
-  if (sensorParams.currOverflows >= SENSORS_OVERFLOWS) {
-    if (sensorParams.poweredOn) {
-      _changeSensorsPower();
-    }
-
-    TIMSK2 &= ~(1 << TOIE2);
-    sensorParams.currOverflows = 0;
-
-    return;
-  }
-
-  // Time has not passed yet -> check if sensors should turn on
-  if (!sensorParams.poweredOn) {
-      _changeSensorsPower();
-    }
 }
 
 void loop() {
@@ -389,6 +361,37 @@ void decode_command() {
   // Timer and ADC checks for current mode configuration
   update_timer_status();
   update_ADC_status();
+}
+
+// Signals front sensors to turn on or off
+void _changeSensorsPower() {
+  // Change power state
+  sensorParams.poweredOn = !sensorParams.poweredOn;
+
+  // Send power impulse
+  pinMode(SENSORS_TRIGGER_PIN, OUTPUT);
+  digitalWrite(SENSORS_TRIGGER_PIN, LOW);
+  delay(100);
+  // Set pin back to high impedance
+  pinMode(SENSORS_TRIGGER_PIN, INPUT);
+}
+
+// Handles interrupts on PD3
+void handle_sensors() {
+  // Time passed -> turn off sensors
+  if (sensorParams.currOverflows >= SENSORS_OVERFLOWS) {
+    if (sensorParams.poweredOn) {
+      _changeSensorsPower();
+    }
+
+    sensorParams.currOverflows = 0;
+    return;
+  }
+
+  // Time has not passed yet -> check if sensors should turn on
+  if (!sensorParams.poweredOn) {
+      _changeSensorsPower();
+    }
 }
 
 // https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
