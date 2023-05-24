@@ -87,11 +87,11 @@ Adafruit_NeoPixel pixelsWide(NUM_PIXELS, WIDE_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixelsNarrow(NUM_PIXELS, NARROW_PIN, NEO_GRB + NEO_KHZ800);
 
 // Neopixels values
-stripParams_t wideStripParams;
-stripParams_t narrowStripParams;
+volatile stripParams_t wideStripParams;
+volatile stripParams_t narrowStripParams;
 
 // Program values
-twinkleParams_t twinkleParams;
+volatile twinkleParams_t twinkleParams;
 lightMode_t lightMode;
 uint8_t command; // Received from the remote
 bool brightnessChanged; // Flag set after ADC conversion to update LEDs brightness
