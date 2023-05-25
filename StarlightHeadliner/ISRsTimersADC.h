@@ -28,5 +28,6 @@ void setup_ADC();
 void setup_timer1();
 void setup_timer2();
 void setup_reverse_interrupts();
+void setup_sensors_triggers_pin();
 
 #endif // _ISRS_TIMERS_ADC_H

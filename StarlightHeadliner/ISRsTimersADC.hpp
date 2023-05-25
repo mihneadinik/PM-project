@@ -35,6 +35,7 @@ ISR(TIMER2_OVF_vect) {
     // Time has passed -> turn sensors and timer off
     TIMSK2 &= ~(1 << TOIE2);
     sensorParams.signalPower = true;
+    Serial.println("TIMER 10 SEC");
   }
 }
 
@@ -43,6 +44,7 @@ ISR(INT1_vect) {
   // Check if counting has already begun
   if (!(TIMSK2 & (1 << TOIE2))) {
     // Activate timer2 overflow interrupt
+    Serial.println("ACTIVATE TIMER2");
     TIMSK2 |= (1 << TOIE2);
   }
 
@@ -50,6 +52,7 @@ ISR(INT1_vect) {
   sensorParams.currOverflows = 0;
   // Check if sensors need to be turned on
   sensorParams.signalPower = true;
+  Serial.println("REVERSE PIN INTERRUPT");
 }
 
 // Interrupt routine ADC
@@ -142,6 +145,7 @@ void setup_ADC() {
   sei();
 }
 
+// Sets interrupts on reverse trigger pin
 void setup_reverse_interrupts() {
   cli();
 
@@ -151,6 +155,13 @@ void setup_reverse_interrupts() {
   EIMSK |= (1 << INT1);
 
   sei();
+}
+
+// Sets sensors trigger pin as output
+void setup_sensors_triggers_pin() {
+  DDRD |= (1 << SENSORS_TRIGGER_PIN);
+  // Low initial output
+  PORTD &= ~(1 << SENSORS_TRIGGER_PIN);
 }
 
 #endif // _ISRS_TIMERS_ADC_HPP

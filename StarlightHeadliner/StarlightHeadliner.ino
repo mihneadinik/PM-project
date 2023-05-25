@@ -10,17 +10,6 @@
 #include <Adafruit_NeoPixel.h>
 
 /*************************************************************************************************\
- *                                       Board pins used                                         *
-\*************************************************************************************************/
-
-// Arduino pins
-#define IR_PIN 2
-#define WIDE_PIN 6
-#define NARROW_PIN 7
-#define REVERSE_TRIGGER_PIN 3
-#define SENSORS_TRIGGER_PIN 4
-
-/*************************************************************************************************\
  *                                      Global Variables                                         *
 \*************************************************************************************************/
 
@@ -60,6 +49,7 @@ void setup() {
   setup_timer1();
   setup_timer2();
   setup_reverse_interrupts();
+  setup_sensors_triggers_pin();
   setup_ADC();
   set_initial_values();
 
@@ -369,27 +359,29 @@ void _changeSensorsPower() {
   sensorParams.poweredOn = !sensorParams.poweredOn;
 
   // Send power impulse
-  pinMode(SENSORS_TRIGGER_PIN, OUTPUT);
-  digitalWrite(SENSORS_TRIGGER_PIN, LOW);
+  PORTD |= (1 << SENSORS_TRIGGER_PIN);
   delay(100);
-  // Set pin back to high impedance
-  pinMode(SENSORS_TRIGGER_PIN, INPUT);
+  // Set pin back to low voltage
+  PORTD &= ~(1 << SENSORS_TRIGGER_PIN);
 }
 
 // Handles interrupts on PD3
 void handle_sensors() {
-  // Time passed -> turn off sensors
+  // Time passed -> stop timer and turn off sensors
   if (sensorParams.currOverflows >= SENSORS_OVERFLOWS) {
     if (sensorParams.poweredOn) {
+      Serial.println("TURN OFF SENSORS");
       _changeSensorsPower();
     }
 
     sensorParams.currOverflows = 0;
+
     return;
   }
 
   // Time has not passed yet -> check if sensors should turn on
   if (!sensorParams.poweredOn) {
+      Serial.println("TURN ON SENSORS");
       _changeSensorsPower();
     }
 }
