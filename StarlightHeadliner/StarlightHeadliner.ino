@@ -37,6 +37,7 @@ void decode_command();
 void execute_mode();
 void _changeSensorsPower();
 void handle_sensors();
+void startup_animation();
 
 /*************************************************************************************************\
  *                                      Arduino functions                                        *
@@ -51,11 +52,15 @@ void setup() {
   setup_reverse_interrupts();
   setup_sensors_triggers_pin();
   setup_ADC();
-  set_initial_values();
 
   // Neopixels startup
   pixelsWide.begin();
   pixelsNarrow.begin();
+
+  // Play animation
+  startup_animation();
+
+  set_initial_values();
 }
 
 void loop() {
@@ -384,6 +389,41 @@ void handle_sensors() {
       Serial.println("TURN ON SENSORS");
       _changeSensorsPower();
     }
+}
+
+void startup_animation() {
+  // Set white color
+  wideStripParams.saturation = SATURATION_WHITE;
+  wideStripParams.hue = MAX_HUE;
+  narrowStripParams.saturation = SATURATION_WHITE;
+  narrowStripParams.hue = MAX_HUE;
+
+  // Set brightness
+  pixelsWide.setBrightness(MAX_BRIGHTNESS);
+  pixelsNarrow.setBrightness(MAX_BRIGHTNESS);
+
+  // Light up from front to back
+  for (int i = 0; i < NUM_PIXELS; i++) {
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation));
+
+    // Apply changes
+    pixelsWide.show();
+    pixelsNarrow.show();
+    delay(500);
+  }
+
+  // Clear light from front to back
+  for (int i = 0; i < NUM_PIXELS; i++) {
+    // Pass 0 to value of HSV in order to turn off LED
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, 0));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, 0));
+
+    // Apply changes
+    pixelsWide.show();
+    pixelsNarrow.show();
+    delay(500);
+  }
 }
 
 // https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use
