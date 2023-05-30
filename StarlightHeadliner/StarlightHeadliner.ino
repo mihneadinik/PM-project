@@ -10,15 +10,6 @@
 #include <Adafruit_NeoPixel.h>
 
 /*************************************************************************************************\
- *                                       Board pins used                                         *
-\*************************************************************************************************/
-
-// Arduino pins
-#define IR_PIN 2
-#define WIDE_PIN 6
-#define NARROW_PIN 7
-
-/*************************************************************************************************\
  *                                      Global Variables                                         *
 \*************************************************************************************************/
 
@@ -32,6 +23,7 @@ volatile stripParams_t narrowStripParams;
 
 // Program values
 volatile twinkleParams_t twinkleParams;
+volatile sensorsParams_t sensorParams;
 lightMode_t lightMode;
 volatile uint8_t command; // Received from the remote
 volatile bool brightnessChanged; // Flag set after ADC conversion to update LEDs brightness
@@ -43,21 +35,32 @@ volatile bool brightnessChanged; // Flag set after ADC conversion to update LEDs
 void set_initial_values();
 void decode_command();
 void execute_mode();
+void _changeSensorsPower();
+void handle_sensors();
+void startup_animation();
 
 /*************************************************************************************************\
  *                                      Arduino functions                                        *
 \*************************************************************************************************/
 
 void setup() {
+  Serial.begin(9600);
   // Initial setups
   setup_receiver_and_interrupts();
   setup_timer1();
+  setup_timer2();
+  setup_reverse_interrupts();
+  setup_sensors_triggers_pin();
   setup_ADC();
-  set_initial_values();
 
   // Neopixels startup
   pixelsWide.begin();
   pixelsNarrow.begin();
+
+  // Play animation
+  startup_animation();
+
+  set_initial_values();
 }
 
 void loop() {
@@ -67,6 +70,12 @@ void loop() {
     lightMode.modeChange = false;
     // Handle new command from interrupt
     decode_command();
+  }
+
+  if (sensorParams.signalPower) {
+    // Clear flag
+    sensorParams.signalPower = false;
+    handle_sensors();
   }
 
   // Update LEDs based on selected light mode
@@ -91,6 +100,11 @@ void set_initial_values() {
   narrowStripParams.rainbow = false;
   wideStripParams.twinkle = false;
   narrowStripParams.twinkle = false;
+
+  // Sensors params
+  sensorParams.currOverflows = 0;
+  sensorParams.poweredOn = false;
+  sensorParams.signalPower = false;
 
   // Program params (starts on white-red twinkle)
   command = IR_7;
@@ -342,6 +356,74 @@ void decode_command() {
   // Timer and ADC checks for current mode configuration
   update_timer_status();
   update_ADC_status();
+}
+
+// Signals front sensors to turn on or off
+void _changeSensorsPower() {
+  // Change power state
+  sensorParams.poweredOn = !sensorParams.poweredOn;
+
+  // Send power impulse
+  PORTD |= (1 << SENSORS_TRIGGER_PIN);
+  delay(100);
+  // Set pin back to low voltage
+  PORTD &= ~(1 << SENSORS_TRIGGER_PIN);
+}
+
+// Handles interrupts on PD3
+void handle_sensors() {
+  // Time passed -> stop timer and turn off sensors
+  if (sensorParams.currOverflows >= SENSORS_OVERFLOWS) {
+    if (sensorParams.poweredOn) {
+      Serial.println("TURN OFF SENSORS");
+      _changeSensorsPower();
+    }
+
+    sensorParams.currOverflows = 0;
+
+    return;
+  }
+
+  // Time has not passed yet -> check if sensors should turn on
+  if (!sensorParams.poweredOn) {
+      Serial.println("TURN ON SENSORS");
+      _changeSensorsPower();
+    }
+}
+
+void startup_animation() {
+  // Set white color
+  wideStripParams.saturation = SATURATION_WHITE;
+  wideStripParams.hue = MAX_HUE;
+  narrowStripParams.saturation = SATURATION_WHITE;
+  narrowStripParams.hue = MAX_HUE;
+
+  // Set brightness
+  pixelsWide.setBrightness(MAX_BRIGHTNESS);
+  pixelsNarrow.setBrightness(MAX_BRIGHTNESS);
+
+  // Light up from front to back
+  for (int i = 0; i < NUM_PIXELS; i++) {
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation));
+
+    // Apply changes
+    pixelsWide.show();
+    pixelsNarrow.show();
+    delay(500);
+  }
+
+  // Clear light from front to back
+  for (int i = 0; i < NUM_PIXELS; i++) {
+    // Pass 0 to value of HSV in order to turn off LED
+    pixelsWide.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(wideStripParams.hue, wideStripParams.saturation, 0));
+    pixelsNarrow.setPixelColor(i, Adafruit_NeoPixel::ColorHSV(narrowStripParams.hue, narrowStripParams.saturation, 0));
+
+    // Apply changes
+    pixelsWide.show();
+    pixelsNarrow.show();
+    delay(500);
+  }
 }
 
 // https://learn.adafruit.com/adafruit-neopixel-uberguide/arduino-library-use

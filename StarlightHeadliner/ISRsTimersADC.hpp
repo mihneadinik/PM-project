@@ -26,6 +26,35 @@ ISR(TIMER1_COMPB_vect) {
   ADCSRA |= (1 << ADSC);
 }
 
+// Interrupt routine for timer2
+ISR(TIMER2_OVF_vect) {
+  if (sensorParams.currOverflows < SENSORS_OVERFLOWS) {
+    // Count 10 seconds
+    sensorParams.currOverflows++;
+  } else {
+    // Time has passed -> turn sensors and timer off
+    TIMSK2 &= ~(1 << TOIE2);
+    sensorParams.signalPower = true;
+    Serial.println("TIMER 10 SEC");
+  }
+}
+
+// Interrupt routine for reverse signal
+ISR(INT1_vect) {
+  // Check if counting has already begun
+  if (!(TIMSK2 & (1 << TOIE2))) {
+    // Activate timer2 overflow interrupt
+    Serial.println("ACTIVATE TIMER2");
+    TIMSK2 |= (1 << TOIE2);
+  }
+
+  // Reset overflow counter
+  sensorParams.currOverflows = 0;
+  // Check if sensors need to be turned on
+  sensorParams.signalPower = true;
+  Serial.println("REVERSE PIN INTERRUPT");
+}
+
 // Interrupt routine ADC
 ISR(ADC_vect) {
   // Read conversion and set brightness accordingly (no less than 10 -> 4%)
@@ -61,16 +90,35 @@ void setup_timer1() {
   TCNT1 = 0;
   TCCR1A = 0;
   TCCR1B = 0;
+
   // Set the timer to stop on compare match
   TCCR1A = 0;
   TCCR1B |= (1 << WGM12);
+
   // Set prescaler to 256
   TCCR1B |= (1 << CS12);
+
   // Set compare values (channel A - twinkle and channel B - music)
   OCR1A = TIMER_TWINKLE_COMPARE;
   OCR1B = TIMER_MUSIC_COMPARE;
+
   // Activate interrupt on compare match
   TIMSK1 |= (1 << OCIE1A);
+
+  sei();
+}
+
+// Sets timer2
+void setup_timer2() {
+  cli();
+
+  // Clear the registers
+  TCNT2 = 0;
+  TCCR2A = 0;
+  TCCR2B = 0;
+
+  // Set prescaler to 1024
+  TCCR2B |= (1 << CS22) | (1 << CS21) | (1 << CS20);
 
   sei();
 }
@@ -95,6 +143,25 @@ void setup_ADC() {
   ADMUX |= (1 << ADLAR);
 
   sei();
+}
+
+// Sets interrupts on reverse trigger pin
+void setup_reverse_interrupts() {
+  cli();
+
+  // falling edge on PD3
+  EICRA |= (1 << ISC11);
+  // activate interrupt on PD3
+  EIMSK |= (1 << INT1);
+
+  sei();
+}
+
+// Sets sensors trigger pin as output
+void setup_sensors_triggers_pin() {
+  DDRD |= (1 << SENSORS_TRIGGER_PIN);
+  // Low initial output
+  PORTD &= ~(1 << SENSORS_TRIGGER_PIN);
 }
 
 #endif // _ISRS_TIMERS_ADC_HPP

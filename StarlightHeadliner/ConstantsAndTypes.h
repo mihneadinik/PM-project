@@ -2,6 +2,17 @@
 #define _CONSTANTS_AND_TYPES_H
 
 /*************************************************************************************************\
+ *                                       Board pins used                                         *
+\*************************************************************************************************/
+
+// Arduino pins
+#define IR_PIN 2
+#define WIDE_PIN 6
+#define NARROW_PIN 7
+#define REVERSE_TRIGGER_PIN PD3
+#define SENSORS_TRIGGER_PIN PD4
+
+/*************************************************************************************************\
  *                                        Constant values                                        *
 \*************************************************************************************************/
 
@@ -21,6 +32,7 @@ const uint16_t MUSIC_CAPTURE_DELAY = 100; // can go up to 1048ms for 1/256 presc
 const uint16_t TIMER_TWINKLE_COMPARE = (F_CPU / 256 / 1000 * TWINKLE_DELAY);
 const uint16_t TIMER_MUSIC_COMPARE = (F_CPU / 256 / 1000 * MUSIC_CAPTURE_DELAY);
 const uint8_t CYCLE_FADE_VALUE = (255 / NUM_PIXELS);
+const uint16_t SENSORS_OVERFLOWS = 625; // number of overflows on timer2 with 1/1024 prescaler to count 10 sec
 
 // Color constants
 const uint16_t HUE_RED = 0;
@@ -88,5 +100,12 @@ typedef struct {
   state currMode; // Current light mode
   bool modeChange; // Flag set in interrupt routine so a new command will be decoded in loop
 } lightMode_t;
+
+// Structure used to keep runtime parameters of front sensors and camera
+typedef struct {
+  uint16_t currOverflows;
+  bool poweredOn;
+  bool signalPower;
+} sensorsParams_t;
 
 #endif // _CONSTANTS_AND_TYPES_H
